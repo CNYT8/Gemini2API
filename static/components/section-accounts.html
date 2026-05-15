@@ -1,0 +1,45 @@
+<link rel="stylesheet" href="components/section-accounts.css">
+<!-- Accounts Section -->
+<section id="accounts" class="section" aria-labelledby="accounts-title">
+    <div class="section-header">
+        <h2 id="accounts-title">账号管理</h2>
+        <button class="btn btn-primary" id="addAccountBtn">
+            <i class="fas fa-plus"></i> <span>添加账号</span>
+        </button>
+    </div>
+
+    <!-- Accounts Grid -->
+    <div id="accountsList" class="accounts-grid">
+        <!-- Account cards will be loaded here -->
+    </div>
+</section>
+
+<!-- Add Account Modal -->
+<div id="addAccountModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>添加账号</h3>
+            <button class="modal-close" aria-label="Close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="add-label">标签名称</label>
+                <input type="text" id="add-label" class="form-control" placeholder="例如: 主账号">
+            </div>
+            <div class="form-group">
+                <label for="add-psid">__Secure-1PSID <span class="required">*</span></label>
+                <input type="text" id="add-psid" class="form-control" placeholder="输入 __Secure-1PSID" required>
+            </div>
+            <div class="form-group">
+                <label for="add-psidts">__Secure-1PSIDTS</label>
+                <input type="text" id="add-psidts" class="form-control" placeholder="输入 __Secure-1PSIDTS (可选)">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">取消</button>
+            <button class="btn btn-primary" id="confirmAddAccount">确认添加</button>
+        </div>
+    </div>
+</div>

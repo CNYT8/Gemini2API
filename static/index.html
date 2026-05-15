@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN" id="html-root">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="theme-color" content="#059669">
+    <meta name="description" content="Gemini2API Management Console">
+    <title>Gemini2API - 管理控制台</title>
+    <link rel="stylesheet" href="app/base.css">
+    <link rel="stylesheet" href="app/mobile.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script type="module">
+        import { getCurrentTheme } from './app/theme-switcher.js';
+        const theme = getCurrentTheme();
+        if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header will be inserted here by component-loader -->
+
+        <div class="main-content">
+            <!-- Sidebar container -->
+            <div id="sidebar-container"></div>
+
+            <!-- Content Area -->
+            <main class="content" role="main" id="content-container">
+                <!-- Sections will be inserted here by component-loader -->
+            </main>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script type="module">
+        import { initializeComponents } from './app/component-loader.js';
+
+        (async function() {
+            try {
+                await initializeComponents();
+            } catch (error) {
+                console.error('Failed to load components:', error);
+                document.body.innerHTML = '<div style="padding:2rem;text-align:center;"><h2>加载失败</h2><p>请刷新页面重试</p></div>';
+            }
+        })();
+    </script>
+    <script type="module" src="app/app.js"></script>
+</body>
+</html>

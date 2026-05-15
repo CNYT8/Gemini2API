@@ -1,9 +1,12 @@
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -13,6 +16,8 @@ from app.core.account_pool import account_pool
 from app.core.auth import verify_api_key
 from app.routers import openai, claude, gemini, research
 from app.routers import admin
+
+STATIC_DIR = Path(__file__).parent.parent / "static"
 
 log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 logging.basicConfig(
@@ -72,12 +77,23 @@ async def health_check():
     return {"status": "ok", "service": "gemini2api"}
 
 
-@app.exception_handler(404)
-async def not_found_handler(request: Request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={"error": {"message": f"Route {request.url.path} not found", "type": "not_found"}},
-    )
+@app.get("/login.html")
+async def login_page():
+    login_file = STATIC_DIR / "login.html"
+    if login_file.exists():
+        return FileResponse(login_file, media_type="text/html")
+    return HTMLResponse("<h1>Login page not found</h1>", status_code=404)
+
+
+@app.get("/index.html")
+async def index_page():
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file, media_type="text/html")
+    return HTMLResponse("<h1>Panel not found</h1>", status_code=404)
+
+
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 
 if __name__ == "__main__":

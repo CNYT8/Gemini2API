@@ -15,6 +15,7 @@ WORKDIR /app
 
 COPY --from=builder /install /usr/local
 COPY app/ ./app/
+COPY static/ ./static/
 
 RUN chown -R appuser:appuser /app
 USER appuser

@@ -1,0 +1,47 @@
+<link rel="stylesheet" href="components/section-config.css">
+<!-- Config Section -->
+<section id="config" class="section" aria-labelledby="config-title">
+    <h2 id="config-title">配置管理</h2>
+
+    <!-- Current Config Display -->
+    <div class="config-card">
+        <div class="config-card-header">
+            <h3>当前配置</h3>
+        </div>
+        <div class="config-card-body">
+            <div id="configDisplay" class="config-grid">
+                <!-- Config items will be loaded here -->
+                <div class="config-loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <span>加载中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cookie Reload Section -->
+    <div class="config-card">
+        <div class="config-card-header">
+            <h3>Cookie 热更新</h3>
+        </div>
+        <div class="config-card-body">
+            <p class="config-description">
+                <i class="fas fa-info-circle"></i>
+                更新第一个账号的 Cookie，无需重启服务。
+            </p>
+            <form id="reloadCookiesForm" class="reload-form">
+                <div class="form-group">
+                    <label for="reload-psid">__Secure-1PSID</label>
+                    <input type="text" id="reload-psid" class="form-control" placeholder="输入新的 __Secure-1PSID">
+                </div>
+                <div class="form-group">
+                    <label for="reload-psidts">__Secure-1PSIDTS</label>
+                    <input type="text" id="reload-psidts" class="form-control" placeholder="输入新的 __Secure-1PSIDTS (可选)">
+                </div>
+                <button type="submit" class="btn btn-primary" id="reloadCookiesBtn">
+                    <i class="fas fa-sync-alt"></i> <span>更新 Cookie</span>
+                </button>
+            </form>
+        </div>
+    </div>
+</section>

@@ -7,8 +7,24 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+STATIC_EXTENSIONS = {".html", ".css", ".js", ".ico", ".png", ".jpg", ".svg", ".woff", ".woff2", ".ttf"}
+
+
 async def verify_api_key(request: Request):
-    if request.url.path == "/health":
+    path = request.url.path
+
+    if path == "/health":
+        return
+
+    if path in ("/", "/login.html", "/index.html"):
+        return
+
+    from pathlib import PurePosixPath
+    suffix = PurePosixPath(path).suffix.lower()
+    if suffix in STATIC_EXTENSIONS:
+        return
+
+    if path.startswith("/app/") or path.startswith("/components/"):
         return
 
     key = None

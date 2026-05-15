@@ -202,11 +202,13 @@ class AccountPool:
             accounts_info.append({
                 "id": a.id,
                 "label": a.label,
+                "psid": a.psid,
                 "status": a.status.value,
                 "request_count": a.request_count,
                 "error_count": a.error_count,
                 "active_requests": a.active_requests,
                 "last_used": a.last_used.isoformat() if a.last_used else None,
+                "models": list(a.client.models) if a.client else [],
                 "models_count": len(a.client.models) if a.client else 0,
             })
         return {

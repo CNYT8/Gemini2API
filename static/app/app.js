@@ -1,0 +1,548 @@
+/**
+ * Gemini2API 管理面板 - 主应用入口
+ */
+
+import { initializeComponents } from './component-loader.js';
+import { initThemeSwitcher } from './theme-switcher.js';
+import { initAuth, apiCall, logout } from './auth.js';
+import { showToast, formatNumber, getStatusBadge, maskString, copyToClipboard } from './utils.js';
+
+let isAppInitialized = false;
+
+const elements = {
+    navItems: null,
+    sections: null
+};
+
+function initElements() {
+    elements.navItems = document.querySelectorAll('.nav-item');
+    elements.sections = document.querySelectorAll('.section');
+}
+
+function initNavigation() {
+    if (!elements.navItems || !elements.sections) return;
+
+    elements.navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            const sectionId = item.dataset.section;
+            activateSection(sectionId);
+        });
+    });
+
+    window.addEventListener('hashchange', () => {
+        const sectionId = window.location.hash.slice(1) || 'dashboard';
+        activateSection(sectionId, false);
+    });
+
+    const initialSectionId = window.location.hash.slice(1) || 'dashboard';
+    activateSection(initialSectionId, false);
+}
+
+function activateSection(sectionId, updateHash = true) {
+    elements.navItems.forEach(nav => {
+        nav.classList.remove('active');
+        if (nav.dataset.section === sectionId) {
+            nav.classList.add('active');
+        }
+    });
+
+    elements.sections.forEach(section => {
+        section.classList.remove('active');
+        if (section.id === sectionId) {
+            section.classList.add('active');
+        }
+    });
+
+    if (updateHash) {
+        window.location.hash = sectionId;
+    }
+
+    loadSectionData(sectionId);
+    window.scrollTo(0, 0);
+}
+
+async function loadSectionData(sectionId) {
+    try {
+        switch (sectionId) {
+            case 'dashboard':
+                await loadDashboard();
+                break;
+            case 'accounts':
+                await loadAccounts();
+                break;
+            case 'config':
+                await loadConfig();
+                break;
+        }
+    } catch (error) {
+        console.error(`加载${sectionId}数据失败:`, error);
+    }
+}
+
+// ============================================================================
+// Dashboard
+// ============================================================================
+
+async function loadDashboard() {
+    try {
+        const data = await apiCall('GET', '/admin/status');
+        const accounts = data.accounts || [];
+
+        const activeCount = accounts.filter(a => a.status === 'active').length;
+        const totalRequests = accounts.reduce((sum, a) => sum + (a.request_count || 0), 0);
+        const modelsSet = new Set();
+        accounts.forEach(a => {
+            if (a.models && Array.isArray(a.models)) {
+                a.models.forEach(m => modelsSet.add(m));
+            }
+        });
+
+        setText('stat-total', formatNumber(accounts.length));
+        setText('stat-active', formatNumber(activeCount));
+        setText('stat-requests', formatNumber(totalRequests));
+        setText('stat-models', formatNumber(modelsSet.size || accounts.reduce((s, a) => s + (a.models_count || 0), 0)));
+
+        setText('info-strategy', data.strategy || '-');
+        setText('info-concurrent', data.max_concurrent_per_account || '-');
+        setText('info-healthy', activeCount > 0 ? '正常' : '异常');
+        setText('info-python', '3.12');
+
+        renderAccountStatusGrid(accounts);
+        renderModelsList(modelsSet);
+    } catch (error) {
+        console.error('加载仪表盘失败:', error);
+    }
+}
+
+function renderAccountStatusGrid(accounts) {
+    const container = document.getElementById('accountStatusGrid');
+    if (!container) return;
+
+    if (accounts.length === 0) {
+        container.innerHTML = '<div class="empty-state"><i class="fas fa-server"></></div>';
+        return;
+    }
+
+    container.innerHTML = accounts.map(account => `
+        <div class="provider-card">
+            <div class="provider-card-header">
+                <h4>${account.label || account.id}</h4>
+                ${getStatusBadge(account.status)}
+            </div>
+            <div class="account-detail">
+                <span class="label">请求数</span>
+                <span class="value">${formatNumber(account.request_count || 0)}</span>
+            </div>
+            <div class="account-detail">
+                <span class="label">错误数</span>
+                <span class="value">${formatNumber(account.error_count || 0)}</span>
+            </div>
+            <div class="account-detail">
+                <span class="label">并发</span>
+                <span class="value">${account.active_requests || 0}</span>
+            </div>
+            <div class="account-detail">
+                <span class="label">模型数</span>
+                <span class="value">${account.models_count || 0}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderModelsList(modelsSet) {
+    const container = document.getElementById('modelsList');
+    if (!container) return;
+
+    const models = Array.from(modelsSet).sort();
+    if (models.length === 0) {
+        container.innerHTML = '<span class="text-muted">暂无可用模型</span>';
+        return;
+    }
+
+    container.innerHTML = models.map(model => `
+        <span class="model-tag" onclick="window.app.copyModel('${model}')">
+            <i class="fas fa-cube"></i> ${model}
+        </span>
+    `).join('');
+}
+
+// ============================================================================
+// Accounts
+// ============================================================================
+
+async function loadAccounts() {
+    try {
+        const data = await apiCall('GET', '/admin/accounts');
+        const accounts = data.accounts || [];
+
+        const container = document.getElementById('accountsList');
+        if (!container) return;
+
+        if (accounts.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-users"></i>
+                    <p>暂无账号</p>
+                    <button class="btn btn-primary" onclick="window.app.openAddAccountModal()">
+                        <i class="fas fa-plus"></i> 添加第一个账号
+                    </button>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = accounts.map(account => `
+            <div class="account-card">
+                <div class="account-card-header">
+                    <div>
+                        <h4>${account.label || '未命名账号'}</h4>
+                        <span class="text-muted">ID: ${account.id}</span>
+                    </div>
+                    ${getStatusBadge(account.status)}
+                </div>
+                <div class="account-detail">
+                    <span class="label">PSID</span>
+                    <span class="value">${maskString(account.psid || '', 12)}</span>
+                </div>
+                <div class="account-detail">
+                    <span class="label">请求数</span>
+                    <span class="value">${formatNumber(account.request_count || 0)}</span>
+                </div>
+                <div class="account-detail">
+                    <span class="label">错误数</span>
+                    <span class="value">${formatNumber(account.error_count || 0)}</span>
+                </div>
+                <div class="account-detail">
+                    <span class="label">模型</span>
+                    <span class="value">${(account.models || []).length || account.models_count || 0}</span>
+                </div>
+                <div class="account-actions">
+                    <button class="btn btn-sm btn-outline" onclick="window.app.checkAccount('${account.id}')">
+                        <i class="fas fa-heartbeat"></i> 检测
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="window.app.removeAccount('${account.id}')">
+                        <i class="fas fa-trash"></i> 删除
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('加载账号列表失败:', error);
+    }
+}
+
+async function checkAccount(accountId) {
+    try {
+        showToast('正在检测账号...', 'info');
+        const result = await apiCall('GET', `/admin/accounts/${accountId}/check`);
+        const msg = result.valid ? '账号有效' : '账号无效';
+        showToast(`${msg} | 模型: ${result.models_count || 0}`, result.valid ? 'success' : 'error');
+        await loadAccounts();
+        await loadDashboard();
+    } catch (error) {
+        showToast(`检测失败: ${error.message}`, 'error');
+    }
+}
+
+async function removeAccount(accountId) {
+    if (!confirm('确定要删除此账号吗？此操作不可撤销。')) return;
+
+    try {
+        showToast('正在删除...', 'info');
+        await apiCall('DELETE', `/admin/accounts/${accountId}`);
+        showToast('账号已删除', 'success');
+        await loadAccounts();
+        await loadDashboard();
+    } catch (error) {
+        showToast(`删除失败: ${error.message}`, 'error');
+    }
+}
+
+function openAddAccountModal() {
+    const modal = document.getElementById('addAccountModal');
+    if (modal) modal.classList.add('active');
+}
+
+function closeAddAccountModal() {
+    const modal = document.getElementById('addAccountModal');
+    if (modal) {
+        modal.classList.remove('active');
+        const inputs = modal.querySelectorAll('input');
+        inputs.forEach(input => { input.value = ''; });
+    }
+}
+
+async function submitAddAccount() {
+    const psid = document.getElementById('add-psid')?.value.trim();
+    const psidts = document.getElementById('add-psidts')?.value.trim() || '';
+    const label = document.getElementById('add-label')?.value.trim() || '';
+
+    if (!psid) {
+        showToast('请填写 __Secure-1PSID', 'warning');
+        return;
+    }
+
+    try {
+        showToast('正在添加账号...', 'info');
+        await apiCall('POST', '/admin/accounts', { psid, psidts, label });
+        showToast('账号添加成功', 'success');
+        closeAddAccountModal();
+        await loadAccounts();
+        await loadDashboard();
+    } catch (error) {
+        showToast(`添加失败: ${error.message}`, 'error');
+    }
+}
+
+// ============================================================================
+// Config
+// ============================================================================
+
+async function loadConfig() {
+    try {
+        const data = await apiCall('GET', '/admin/status');
+        const container = document.getElementById('configDisplay');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="config-item">
+                <span class="config-key">轮询策略</span>
+                <span class="config-value">${data.strategy || '-'}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-key">单账号并发上限</span>
+                <span class="config-value">${data.max_concurrent_per_account || '-'}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-key">账号总数</span>
+                <span class="config-value">${(data.accounts || []).length}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-key">活跃账号</span>
+                <span class="config-value">${(data.accounts || []).filter(a => a.status === 'active').length}</span>
+            </div>
+        `;
+    } catch (error) {
+        console.error('加载配置失败:', error);
+    }
+}
+
+async function reloadCookies(event) {
+    if (event) event.preventDefault();
+
+    const psid = document.getElementById('reload-psid')?.value.trim();
+    const psidts = document.getElementById('reload-psidts')?.value.trim() || '';
+
+    if (!psid) {
+        showToast('请填写 __Secure-1PSID', 'warning');
+        return;
+    }
+
+    try {
+        showToast('正在更新 Cookie...', 'info');
+        await apiCall('POST', '/admin/reload-cookies', { psid, psidts });
+        showToast('Cookie 更新成功', 'success');
+        document.getElementById('reload-psid').value = '';
+        document.getElementById('reload-psidts').value = '';
+        await loadDashboard();
+    } catch (error) {
+        showToast(`更新失败: ${error.message}`, 'error');
+    }
+}
+
+// ============================================================================
+// Playground
+// ============================================================================
+
+async function sendPlaygroundRequest() {
+    const message = document.getElementById('pg-message')?.value.trim();
+    const model = document.getElementById('pg-model')?.value;
+    const responseArea = document.getElementById('pg-response');
+
+    if (!message) {
+        showToast('请输入消息内容', 'warning');
+        return;
+    }
+
+    if (responseArea) {
+        responseArea.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> 生成中...</div>';
+    }
+
+    try {
+        const response = await apiCall('POST', '/v1/chat/completions', {
+            model: model || 'gemini-2.0-flash-exp',
+            messages: [{ role: 'user', content: message }],
+            stream: false
+        });
+
+        const content = response.choices?.[0]?.message?.content || '无响应内容';
+        if (responseArea) {
+            responseArea.textContent = content;
+        }
+    } catch (error) {
+        if (responseArea) {
+            responseArea.innerHTML = `<span class="text-danger">错误: ${error.message}</span>`;
+        }
+    }
+}
+
+function clearPlayground() {
+    const message = document.getElementById('pg-message');
+    const response = document.getElementById('pg-response');
+    if (message) message.value = '';
+    if (response) {
+        response.innerHTML = '<div class="response-placeholder"><i class="fas fa-comment-dots"></i><p>发送请求后，响应内容将显示在这里</p></div>';
+    }
+}
+
+// ============================================================================
+// Logs
+// ============================================================================
+
+function clearLogs() {
+    const container = document.getElementById('logsContainer');
+    if (container) {
+        container.innerHTML = '<div class="logs-placeholder"><i class="fas fa-file-alt"></i><p>日志已清空</p></div>';
+    }
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+function setText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+}
+
+function copyModel(model) {
+    copyToClipboard(model);
+    showToast(`已复制: ${model}`, 'success');
+}
+
+// ============================================================================
+// Event Listeners
+// ============================================================================
+
+function initEventListeners() {
+    // Add account button
+    const addAccountBtn = document.getElementById('addAccountBtn');
+    if (addAccountBtn) {
+        addAccountBtn.addEventListener('click', openAddAccountModal);
+    }
+
+    // Confirm add account
+    const confirmBtn = document.getElementById('confirmAddAccount');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', submitAddAccount);
+    }
+
+    // Modal close buttons
+    document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+        btn.addEventListener('click', closeAddAccountModal);
+    });
+
+    // Modal overlay click to close
+    const modal = document.getElementById('addAccountModal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeAddAccountModal();
+        });
+    }
+
+    // Reload cookies form
+    const reloadForm = document.getElementById('reloadCookiesForm');
+    if (reloadForm) {
+        reloadForm.addEventListener('submit', reloadCookies);
+    }
+
+    // Playground send
+    const pgSend = document.getElementById('pg-send');
+    if (pgSend) {
+        pgSend.addEventListener('click', sendPlaygroundRequest);
+    }
+
+    // Playground clear
+    const pgClear = document.getElementById('pg-clear-btn');
+    if (pgClear) {
+        pgClear.addEventListener('click', clearPlayground);
+    }
+
+    // Clear logs
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener('click', clearLogs);
+    }
+
+    // Logout
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            if (confirm('确定要退出登录吗？')) logout();
+        });
+    }
+
+    // Refresh account status
+    const refreshBtn = document.getElementById('refreshAccountStatusBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadDashboard);
+    }
+
+    // Mobile menu toggle
+    const mobileToggle = document.getElementById('mobileMenuToggle');
+    if (mobileToggle) {
+        mobileToggle.addEventListener('click', () => {
+            const sidebar = document.querySelector('.sidebar');
+            if (sidebar) sidebar.classList.toggle('active');
+        });
+    }
+}
+
+// ============================================================================
+// Initialization
+// ============================================================================
+
+async function initApp() {
+    if (isAppInitialized) return;
+    isAppInitialized = true;
+
+    initElements();
+    initThemeSwitcher();
+    initNavigation();
+    initEventListeners();
+
+    console.log('Gemini2API 管理控制台已加载');
+}
+
+// Expose functions for onclick handlers
+window.app = {
+    checkAccount,
+    removeAccount,
+    openAddAccountModal,
+    closeAddAccountModal,
+    sendPlaygroundRequest,
+    clearPlayground,
+    clearLogs,
+    copyModel
+};
+
+// Wait for components to load, then initialize
+window.addEventListener('componentsLoaded', async () => {
+    const authSuccess = await initAuth();
+    if (authSuccess) {
+        await initApp();
+    }
+});
+
+// Fallback: if components are already in DOM (static HTML)
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(async () => {
+        if (!isAppInitialized) {
+            const sidebar = document.querySelector('.sidebar');
+            if (sidebar) {
+                const authSuccess = await initAuth();
+                if (authSuccess) await initApp();
+            }
+        }
+    }, 500);
+});

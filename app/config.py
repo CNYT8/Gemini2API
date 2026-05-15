@@ -16,8 +16,8 @@ def _generate_api_key() -> str:
 
 
 class Settings(BaseSettings):
-    gemini_psid: str
-    gemini_psidts: str
+    gemini_psid: str = ""
+    gemini_psidts: str = ""
     api_key: str = ""
     refresh_interval: int = 5
     max_retries: int = 3
@@ -34,11 +34,8 @@ class Settings(BaseSettings):
 
     @field_validator("gemini_psid")
     @classmethod
-    def psid_not_empty(cls, v: str) -> str:
-        v = v.strip().strip('"').strip("'").rstrip(";")
-        if not v:
-            raise ValueError("GEMINI_PSID is required")
-        return v
+    def psid_clean(cls, v: str) -> str:
+        return v.strip().strip('"').strip("'").rstrip(";")
 
     @field_validator("gemini_psidts")
     @classmethod
