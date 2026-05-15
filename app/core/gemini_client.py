@@ -80,7 +80,7 @@ class GeminiWebClient:
 
         if self._healthy:
             self._save_cookies_to_cache()
-            self._refresh_task = asyncio.create_task(self._auto_refresh_loop())
+            self._ensure_refresh_task()
 
         if settings.health_check_enabled:
             self._health_check_task = asyncio.create_task(self._health_check_loop())
@@ -220,18 +220,26 @@ class GeminiWebClient:
                 ROTATE_COOKIES_URL,
                 content=body,
                 cookies=cookies,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://accounts.google.com",
+                },
             )
+            if resp.status_code != 200:
+                logger.warning(f"RotateCookies returned {resp.status_code}")
+                return False
             for hdr in resp.headers.get_list("set-cookie"):
                 if "__Secure-1PSIDTS=" in hdr:
                     new_ts = hdr.split("__Secure-1PSIDTS=")[1].split(";")[0]
                     with self._lock:
                         self._psidts = new_ts
                     self._save_cookies_to_cache()
-                    logger.info("Cookies rotated")
+                    logger.info("PSIDTS rotated via set-cookie")
                     return True
-            logger.warning("PSIDTS not in rotation response")
-            return False
+            # Google may not return a new PSIDTS if the current one is still fresh.
+            # As long as we get 200, the session is alive — re-fetch token to confirm.
+            logger.debug("RotateCookies 200 but no new PSIDTS (session still valid)")
+            return True
         except Exception as e:
             logger.error(f"Rotation failed: {e}")
             return False
@@ -241,12 +249,16 @@ class GeminiWebClient:
         while True:
             await asyncio.sleep(interval)
             try:
-                if not await self._rotate_cookies():
-                    logger.warning("Rotation failed in refresh, re-fetching token")
+                rotated = await self._rotate_cookies()
+                if not rotated:
+                    logger.warning("Rotation failed, re-fetching token directly")
                 await self._obtain_session_token()
-                if not self._session_token:
+                if self._session_token:
+                    self._healthy = True
+                    logger.info("Auto-refresh: session token refreshed")
+                else:
                     self._healthy = False
-                    logger.error("Refresh failed, client unhealthy")
+                    logger.error("Auto-refresh failed, client unhealthy")
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -368,6 +380,7 @@ class GeminiWebClient:
         if self._session_token:
             self._healthy = True
             self._save_cookies_to_cache()
+            self._ensure_refresh_task()
             logger.info("Cookies reloaded successfully")
             return True
 
@@ -377,11 +390,17 @@ class GeminiWebClient:
             if self._session_token:
                 self._healthy = True
                 self._save_cookies_to_cache()
+                self._ensure_refresh_task()
                 logger.info("Cookies reloaded after rotation")
                 return True
 
         logger.error("Cookie reload failed")
         return False
+
+    def _ensure_refresh_task(self):
+        if self._refresh_task is None or self._refresh_task.done():
+            self._refresh_task = asyncio.create_task(self._auto_refresh_loop())
+            logger.info("Auto-refresh loop started")
 
 
 gemini_client = GeminiWebClient()
