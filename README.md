@@ -94,39 +94,39 @@
 ## 🏗 技术架构
 
 ```
-                          Gemini2API
-┌────────────────────────────────────────────────────────────┐
-│                                                            │
-│  Client (OpenAI SDK / Claude SDK / Gemini SDK / cURL)      │
-│       |                                                    │
-│  POST /openai/v1/chat/completions                          │
-│  POST /claude/v1/messages                                  │
-│  POST /gemini/v1beta/models/:m:generateContent             │
-│       |                                                    │
-│       v                                                    │
-│  +-----------+    +----------------+    +--------------+   │
-│  |  Routes   |--->|  Translation   |--->| Account Pool |   │
-│  | (FastAPI) |    | Multi->Gemini  |    | (负载均衡)   |   │
-│  +-----------+    +----------------+    +--------------+   │
-│                                              |             │
-│                                    ┌─────────┼─────────┐   │
-│                                    v         v         v   │
-│                               Account-0  Account-1  ...   │
-│                               (Client)   (Client)         │
-│                                                            │
-│  +-----------+    +----------------+    +--------------+   │
-│  |   Auth    |    | Cookie Manager |    | Health Check |   │
-│  |  API Key  |    |  Auto-Rotate   |    |  Scheduled   |   │
-│  +-----------+    +----------------+    +--------------+   │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-                          |
-                   Browser Cookies
-             (__Secure-1PSID + PSIDTS)
-                          |
-                          v
-                  gemini.google.com
-/StreamGenerate
+                           Gemini2API
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  Client (OpenAI SDK / Claude SDK / Gemini SDK / cURL)       │
+│       |                                                     │
+│  POST /openai/v1/chat/completions                           │
+│  POST /claude/v1/messages                                   │
+│  POST /gemini/v1beta/models/:m:generateContent              │
+│       |                                                     │
+│       v                                                     │
+│  +-----------+    +----------------+    +---------------+   │
+│  |  Routes   |--->|  Translation   |--->| Account Pool  |   │
+│  | (FastAPI) |    | Multi->Gemini  |    |  (负载均衡)   |   │
+│  +-----------+    +----------------+    +---------------+   │
+│                                               |             │
+│                                    ┌──────────┼────────┐    │
+│                                    v          v        v    │
+│                               Account-0  Account-1   ...   │
+│                                (Client)   (Client)          │
+│                                                             │
+│  +-----------+    +----------------+    +---------------+   │
+│  |   Auth    |    | Cookie Manager |    | Health Check  |   │
+│  |  API Key  |    |  Auto-Rotate   |    |  Scheduled    |   │
+│  +-----------+    +----------------+    +---------------+   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+                           |
+                    Browser Cookies
+              (__Secure-1PSID + PSIDTS)
+                           |
+                           v
+                   gemini.google.com
+             /BardChatUi/StreamGenerate
 ```
 
 ---
