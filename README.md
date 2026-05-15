@@ -91,7 +91,7 @@ curl http://localhost:4981/openai/v1/models
 | 变量 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
 | `GEMINI_PSID` | ✅ | — | 浏览器 `__Secure-1PSID` |
-| `GEMINI_PSIDTS` | ❌ | — | 浏览器 `__Secure-1PSIDTS`（可自动获取） |
+| `GEMINI_PSIDTS` | ✅ | — | 浏览器 `__Secure-1PSIDTS` |
 | `REFRESH_INTERVAL` | ❌ | `5` | Cookie 刷新周期（分钟） |
 | `MAX_RETRIES` | ❌ | `3` | 失败重试次数（指数退避） |
 | `PORT` | ❌ | `4981` | 服务端口 |

@@ -4,7 +4,7 @@ from pydantic import field_validator
 
 class Settings(BaseSettings):
     gemini_psid: str
-    gemini_psidts: str = ""
+    gemini_psidts: str
     refresh_interval: int = 5
     max_retries: int = 3
     port: int = 4981
