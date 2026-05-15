@@ -110,6 +110,7 @@ async function loadDashboard() {
 
         renderAccountStatusGrid(accounts);
         renderModelsList(modelsSet);
+        updatePlaygroundModels(modelsSet);
     } catch (error) {
         console.error('加载仪表盘失败:', error);
     }
@@ -165,6 +166,21 @@ function renderModelsList(modelsSet) {
             <i class="fas fa-cube"></i> ${model}
         </span>
     `).join('');
+}
+
+function updatePlaygroundModels(modelsSet) {
+    const select = document.getElementById('pg-model');
+    if (!select) return;
+
+    const models = Array.from(modelsSet).sort();
+    if (models.length === 0) {
+        select.innerHTML = '<option value="">暂无可用模型</option>';
+        return;
+    }
+
+    select.innerHTML = models.map(model =>
+        `<option value="${model}">${model}</option>`
+    ).join('');
 }
 
 // ============================================================================
@@ -570,9 +586,9 @@ function setText(id, text) {
     if (el) el.textContent = text;
 }
 
-function copyModel(model) {
-    copyToClipboard(model);
-    showToast(`已复制: ${model}`, 'success');
+async function copyModel(model) {
+    const ok = await copyToClipboard(model);
+    showToast(ok ? `已复制: ${model}` : '复制失败', ok ? 'success' : 'error');
 }
 
 // ============================================================================
