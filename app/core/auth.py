@@ -37,6 +37,9 @@ async def verify_api_key(request: Request):
         key = request.headers.get("x-api-key", "").strip()
 
     if not key:
+        key = request.query_params.get("token", "").strip()
+
+    if not key:
         raise HTTPException(
             status_code=401,
             detail={"error": {"message": "Missing API key. Use Authorization: Bearer sk-xxx or x-api-key header.", "type": "auth_error"}},

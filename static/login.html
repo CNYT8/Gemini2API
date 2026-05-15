@@ -326,8 +326,16 @@
         const buttonText = document.getElementById('buttonText');
         const errorMessage = document.getElementById('errorMessage');
 
+        const MAX_ATTEMPTS = 5;
+        let remainingAttempts = MAX_ATTEMPTS;
+
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            if (remainingAttempts <= 0) {
+                showError('尝试次数已用完，请稍后再试');
+                return;
+            }
 
             const apiKey = apiKeyInput.value.trim();
 
@@ -340,7 +348,7 @@
             hideError();
 
             try {
-                const response = await fetch('/health', {
+                const response = await fetch('/admin/verify', {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -351,11 +359,22 @@
                 if (response.ok) {
                     localStorage.setItem('gemini2api_token', apiKey);
                     buttonText.textContent = '登录成功';
+                    remainingAttempts = MAX_ATTEMPTS;
                     setTimeout(() => {
                         window.location.href = '/index.html';
                     }, 500);
                 } else if (response.status === 401 || response.status === 403) {
-                    showError('API 密钥无效，请检查后重试');
+                    remainingAttempts--;
+                    if (remainingAttempts > 0) {
+                        showError(`密码错误。还剩 ${remainingAttempts} 次尝试机会。`);
+                    } else {
+                        showError('尝试次数已用完，请稍后再试。');
+                        loginButton.disabled = true;
+                        setTimeout(() => {
+                            remainingAttempts = MAX_ATTEMPTS;
+                            loginButton.disabled = false;
+                        }, 60000);
+                    }
                     setLoading(false);
                 } else {
                     showError('登录失败，请稍后重试');

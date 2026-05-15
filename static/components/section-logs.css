@@ -96,6 +96,20 @@
     word-wrap: break-word;
 }
 
+.log-line {
+    padding: 0.2rem 0;
+    word-wrap: break-word;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.log-line.log-error {
+    color: var(--log-error, #ef4444);
+}
+
+.log-line.log-warning {
+    color: var(--log-warn, #f59e0b);
+}
+
 .log-time {
     color: var(--log-time, #6b7280);
 }

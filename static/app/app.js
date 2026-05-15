@@ -399,8 +399,8 @@ async function sendPlaygroundRequest() {
     }
 
     try {
-        const response = await apiCall('POST', '/v1/chat/completions', {
-            model: model || 'gemini-2.0-flash-exp',
+        const response = await apiCall('POST', '/openai/v1/chat/completions', {
+            model: model || 'gemini-2.5-flash-preview-05-20',
             messages: [{ role: 'user', content: message }],
             stream: false
         });
@@ -428,6 +428,65 @@ function clearPlayground() {
 // ============================================================================
 // Logs
 // ============================================================================
+
+let logEventSource = null;
+
+function initLogStream() {
+    if (logEventSource) {
+        logEventSource.close();
+    }
+
+    const token = localStorage.getItem('gemini2api_token');
+    const url = `/admin/logs/stream?token=${encodeURIComponent(token)}`;
+
+    logEventSource = new EventSource(url);
+
+    logEventSource.onopen = () => {
+        const container = document.getElementById('logsContainer');
+        if (container && container.querySelector('.logs-placeholder')) {
+            container.innerHTML = '';
+        }
+    };
+
+    logEventSource.onmessage = (event) => {
+        const container = document.getElementById('logsContainer');
+        if (!container) return;
+
+        if (container.querySelector('.logs-placeholder')) {
+            container.innerHTML = '';
+        }
+
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        line.textContent = event.data;
+
+        if (event.data.includes('[ERROR]')) {
+            line.classList.add('log-error');
+        } else if (event.data.includes('[WARNING]')) {
+            line.classList.add('log-warning');
+        }
+
+        container.appendChild(line);
+
+        while (container.children.length > 500) {
+            container.removeChild(container.firstChild);
+        }
+
+        const autoScroll = document.getElementById('autoScrollLogs');
+        if (autoScroll && autoScroll.checked) {
+            container.scrollTop = container.scrollHeight;
+        }
+    };
+
+    logEventSource.onerror = () => {
+        setTimeout(() => {
+            if (logEventSource) {
+                logEventSource.close();
+                initLogStream();
+            }
+        }, 3000);
+    };
+}
 
 function clearLogs() {
     const container = document.getElementById('logsContainer');
@@ -547,6 +606,7 @@ async function initApp() {
     initThemeSwitcher();
     initNavigation();
     initEventListeners();
+    initLogStream();
 
     console.log('Gemini2API 管理控制台已加载');
 }

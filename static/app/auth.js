@@ -114,11 +114,9 @@ async function initAuth() {
     }
 
     try {
-        // 验证token是否仍然有效
-        await apiCall('GET', '/health');
+        await apiCall('GET', '/admin/verify');
         return true;
     } catch (error) {
-        // Token无效，清除并重定向到登录页
         clearToken();
         window.location.href = '/login.html';
         return false;

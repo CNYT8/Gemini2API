@@ -48,6 +48,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2025-05-15 21:30:00 | 新增 Web 管理面板（仪表盘、账号管理、实时日志、Playground） |
 | 2025-05-15 19:08:40 | 新增多账号轮询（负载均衡），支持 round-robin / least-used 策略 |
 | 2025-05-15 17:25:10 | 新增账号状态定时检测、健康检查历史记录 API |
 | 2025-05-15 16:50:30 | 新增 Cookie 热更新接口，无需重启即可刷新凭证 |
@@ -81,6 +82,15 @@
 - 热更新 Cookie API，无需重启容器
 - 支持通过 API 动态添加/移除账号
 - 健康检查历史记录，为 Web 面板提供数据支撑
+
+### 🖥 Web 管理面板
+
+- 中文可视化管理界面，API Key 登录认证
+- 仪表盘：账号状态总览、可用模型列表、请求统计
+- 账号管理：添加/删除账号、单独更新 Cookie、健康检测
+- Playground：在线测试 API 请求
+- 实时日志：SSE 推送服务端日志，支持自动滚动
+- 深色/浅色主题切换，响应式移动端适配
 
 ### ⚡ 高性能架构
 
@@ -401,7 +411,10 @@ response = client.chat.completions.create(
 | GET | `/accounts/{id}/check` | 检测单个账号状态 |
 | GET | `/check-account` | 检测所有账号状态 |
 | POST | `/reload-cookies` | 热更新 Cookie（无需重启容器） |
+| PUT | `/accounts/{id}/cookies` | 更新指定账号的 Cookie |
 | GET | `/health-history` | 最近健康检查记录 |
+| GET | `/verify` | 验证 API Key 有效性（登录用） |
+| GET | `/logs/stream` | SSE 实时日志流 |
 
 ### 系统
 
@@ -505,6 +518,19 @@ gemini2api/
 │   └── utils/                  # 工具函数
 │       ├── tools.py            # 函数调用桥接
 │       └── prompt.py           # 消息格式化
+├── static/                     # Web 管理面板
+│   ├── index.html              # 主页面（SPA）
+│   ├── login.html              # 登录页
+│   ├── app/                    # JS/CSS 核心模块
+│   │   ├── app.js              # 主应用逻辑
+│   │   ├── auth.js             # 认证模块
+│   │   ├── base.css            # 全局样式
+│   │   └── ...
+│   └── components/             # HTML 组件片段
+│       ├── section-dashboard.html
+│       ├── section-accounts.html
+│       ├── section-logs.html
+│       └── ...
 ├── Dockerfile                  # 多阶段构建
 ├── docker-compose.yml          # 编排配置
 ├── accounts.json.example       # 多账号配置示例
@@ -524,7 +550,7 @@ gemini2api/
 - [x] Cookie 热更新 API
 - [x] 账号状态定时检测
 - [x] 多账号轮询（负载均衡）
-- [ ] Web 管理面板
+- [x] Web 管理面板
 - [ ] 对话上下文持久化
 - [ ] 图片/文件上传支持
 - [ ] Prometheus 监控指标
