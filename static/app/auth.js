@@ -90,7 +90,8 @@ async function apiCall(method, path, body = null) {
 
         // 如果响应状态码不是 2xx，抛出错误
         if (!response.ok) {
-            const errorMessage = (data && typeof data === 'object' && data.detail)
+            const errorMessage = (data && typeof data === 'object' && data.error && data.error.message)
+                || (data && typeof data === 'object' && data.detail)
                 || (data && typeof data === 'object' && data.message)
                 || `请求失败 (状态: ${response.status})`;
             throw new Error(errorMessage);
