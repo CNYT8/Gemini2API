@@ -274,5 +274,33 @@ class GeminiWebClient:
         if self._http:
             await self._http.aclose()
 
+    async def reload_cookies(self, psid: str | None = None, psidts: str | None = None):
+        if psid:
+            self._psid = psid.strip().strip('"').strip("'").rstrip(";")
+        if psidts:
+            self._psidts = psidts.strip().strip('"').strip("'").rstrip(";")
+
+        self._session_token = ""
+        self._healthy = False
+
+        await self._obtain_session_token()
+        if self._session_token:
+            self._healthy = True
+            self._save_cookies_to_cache()
+            logger.info("Cookies reloaded successfully")
+            return True
+
+        rotated = await self._rotate_cookies()
+        if rotated:
+            await self._obtain_session_token()
+            if self._session_token:
+                self._healthy = True
+                self._save_cookies_to_cache()
+                logger.info("Cookies reloaded after rotation")
+                return True
+
+        logger.error("Cookie reload failed")
+        return False
+
 
 gemini_client = GeminiWebClient()

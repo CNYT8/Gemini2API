@@ -138,6 +138,7 @@ curl -X POST http://localhost:5918/openai/v1/chat/completions \
 |------|------|--------|------|
 | `GEMINI_PSID` | ✅ | — | 浏览器 `__Secure-1PSID` |
 | `GEMINI_PSIDTS` | ✅ | — | 浏览器 `__Secure-1PSIDTS` |
+| `API_KEY` | ❌ | 自动生成 | API 访问密钥（`sk-` 开头，留空则首次启动自动生成） |
 | `REFRESH_INTERVAL` | ❌ | `5` | Cookie 刷新周期（分钟） |
 | `MAX_RETRIES` | ❌ | `3` | 失败重试次数（指数退避） |
 | `PORT` | ❌ | `5918` | 服务端口 |
@@ -150,13 +151,20 @@ curl -X POST http://localhost:5918/openai/v1/chat/completions \
 
 ## 🧪 接入示例
 
+> [!NOTE]
+> 所有 API 请求都需要携带 API Key。支持两种方式：
+> - `Authorization: Bearer sk-xxx`（推荐，兼容 OpenAI/Claude SDK）
+> - `x-api-key: sk-xxx`
+>
+> API Key 在首次启动时自动生成并写入 `.env` 文件，可在日志中查看或手动修改。
+
 ### OpenAI SDK（Python）
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    api_key="any-string",
+    api_key="sk-你的API密钥",  # 填入 .env 中的 API_KEY
     base_url="http://localhost:5918/openai/v1"
 )
 
@@ -174,7 +182,7 @@ for chunk in client.chat.completions.create(
 import anthropic
 
 client = anthropic.Anthropic(
-    api_key="any-string",
+    api_key="sk-你的API密钥",  # 填入 .env 中的 API_KEY
     base_url="http://localhost:5918/claude"
 )
 
@@ -192,11 +200,13 @@ print(msg.content[0].text)
 # 非流式请求
 curl -X POST http://localhost:5918/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
   -d '{"model":"gemini-2.0-flash","messages":[{"role":"user","content":"Hi"}]}'
 
 # 流式请求
 curl -X POST http://localhost:5918/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
   -d '{"model":"gemini-2.0-flash","messages":[{"role":"user","content":"Hi"}],"stream":true}'
 ```
 
@@ -262,6 +272,33 @@ response = client.chat.completions.create(
 | 方法 | 端点 | 功能 |
 |------|------|------|
 | GET | `/health` | 健康检查（Docker 探针适配） |
+
+### 管理接口（`/admin`）
+
+| 方法 | 端点 | 功能 |
+|------|------|------|
+| POST | `/reload-cookies` | 热更新 Cookie（无需重启容器） |
+| GET | `/status` | 服务状态（健康状态 + 可用模型数） |
+
+> 管理接口同样需要 API Key 验证。
+
+**热更新 Cookie 示例：**
+
+```bash
+# 方式一：直接传入新 Cookie
+curl -X POST http://localhost:5918/admin/reload-cookies \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
+  -d '{"psid":"g.a000新的PSID值","psidts":"sidts-新的PSIDTS值"}'
+
+# 方式二：不传参数，从 .env 文件重新读取
+curl -X POST http://localhost:5918/admin/reload-cookies \
+  -H "Authorization: Bearer sk-你的API密钥"
+
+# 查看服务状态
+curl http://localhost:5918/admin/status \
+  -H "Authorization: Bearer sk-你的API密钥"
+```
 
 ---
 

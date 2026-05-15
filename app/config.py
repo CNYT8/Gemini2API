@@ -1,10 +1,24 @@
+import string
+import secrets
+import logging
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
+
+logger = logging.getLogger(__name__)
+
+
+def _generate_api_key() -> str:
+    chars = string.ascii_letters + string.digits
+    suffix = "".join(secrets.choice(chars) for _ in range(32))
+    return f"sk-{suffix}"
 
 
 class Settings(BaseSettings):
     gemini_psid: str
     gemini_psidts: str
+    api_key: str = ""
     refresh_interval: int = 5
     max_retries: int = 3
     port: int = 5918
@@ -26,6 +40,14 @@ class Settings(BaseSettings):
     def clean_psidts(cls, v: str) -> str:
         return v.strip().strip('"').strip("'").rstrip(";")
 
+    @field_validator("api_key")
+    @classmethod
+    def ensure_api_key(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            return _generate_api_key()
+        return v
+
     @field_validator("port")
     @classmethod
     def port_range(cls, v: int) -> int:
@@ -39,3 +61,32 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def _persist_api_key():
+    env_path = Path(".env")
+    if not env_path.exists():
+        return
+    content = env_path.read_text()
+    if "API_KEY=" in content:
+        for line in content.splitlines():
+            if line.startswith("API_KEY="):
+                val = line.split("=", 1)[1].strip()
+                if val:
+                    return
+    if "API_KEY=" in content:
+        lines = content.splitlines()
+        new_lines = []
+        for line in lines:
+            if line.startswith("API_KEY="):
+                new_lines.append(f"API_KEY={settings.api_key}")
+            else:
+                new_lines.append(line)
+        env_path.write_text("\n".join(new_lines) + "\n")
+    else:
+        content = content.rstrip("\n") + f"\nAPI_KEY={settings.api_key}\n"
+        env_path.write_text(content)
+    logger.info(f"API Key generated: {settings.api_key}")
+
+
+_persist_api_key()

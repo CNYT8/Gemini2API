@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -10,7 +10,9 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.core.gemini_client import gemini_client
+from app.core.auth import verify_api_key
 from app.routers import openai, claude, gemini, research
+from app.routers import admin
 
 log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 logging.basicConfig(
@@ -25,6 +27,7 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up...")
+    logger.info(f"API Key: {settings.api_key}")
     await gemini_client.initialize()
     yield
     logger.info("Shutting down...")
@@ -36,6 +39,7 @@ app = FastAPI(
     description="Gemini Web to API proxy",
     version="1.0.0",
     lifespan=lifespan,
+    dependencies=[Depends(verify_api_key)],
 )
 
 app.add_middleware(
@@ -60,6 +64,7 @@ app.include_router(openai.router)
 app.include_router(claude.router)
 app.include_router(gemini.router)
 app.include_router(research.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")
