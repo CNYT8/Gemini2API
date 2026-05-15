@@ -220,6 +220,9 @@ async function loadAccounts() {
                     <button class="btn btn-sm btn-outline" onclick="window.app.checkAccount('${account.id}')">
                         <i class="fas fa-heartbeat"></i> 检测
                     </button>
+                    <button class="btn btn-sm btn-outline" onclick="window.app.openUpdateCookieModal('${account.id}', '${account.label || ''}')">
+                        <i class="fas fa-cookie-bite"></i> 更新Cookie
+                    </button>
                     <button class="btn btn-sm btn-danger" onclick="window.app.removeAccount('${account.id}')">
                         <i class="fas fa-trash"></i> 删除
                     </button>
@@ -295,6 +298,56 @@ async function submitAddAccount() {
 }
 
 // ============================================================================
+// Update Cookie Modal
+// ============================================================================
+
+let updateCookieAccountId = null;
+
+function openUpdateCookieModal(accountId, label) {
+    updateCookieAccountId = accountId;
+    const modal = document.getElementById('updateCookieModal');
+    const title = document.getElementById('updateCookieTitle');
+    if (title) title.textContent = `更新 Cookie - ${label || accountId}`;
+    if (modal) modal.classList.add('active');
+}
+
+function closeUpdateCookieModal() {
+    const modal = document.getElementById('updateCookieModal');
+    if (modal) {
+        modal.classList.remove('active');
+        const inputs = modal.querySelectorAll('input');
+        inputs.forEach(input => { input.value = ''; });
+    }
+    updateCookieAccountId = null;
+}
+
+async function submitUpdateCookie() {
+    const psid = document.getElementById('update-psid')?.value.trim();
+    const psidts = document.getElementById('update-psidts')?.value.trim() || '';
+
+    if (!psid) {
+        showToast('请填写 __Secure-1PSID', 'warning');
+        return;
+    }
+
+    if (!updateCookieAccountId) {
+        showToast('未选择账号', 'error');
+        return;
+    }
+
+    try {
+        showToast('正在更新 Cookie...', 'info');
+        await apiCall('PUT', `/admin/accounts/${updateCookieAccountId}/cookies`, { psid, psidts });
+        showToast('Cookie 更新成功', 'success');
+        closeUpdateCookieModal();
+        await loadAccounts();
+        await loadDashboard();
+    } catch (error) {
+        showToast(`更新失败: ${error.message}`, 'error');
+    }
+}
+
+// ============================================================================
 // Config
 // ============================================================================
 
@@ -324,29 +377,6 @@ async function loadConfig() {
         `;
     } catch (error) {
         console.error('加载配置失败:', error);
-    }
-}
-
-async function reloadCookies(event) {
-    if (event) event.preventDefault();
-
-    const psid = document.getElementById('reload-psid')?.value.trim();
-    const psidts = document.getElementById('reload-psidts')?.value.trim() || '';
-
-    if (!psid) {
-        showToast('请填写 __Secure-1PSID', 'warning');
-        return;
-    }
-
-    try {
-        showToast('正在更新 Cookie...', 'info');
-        await apiCall('POST', '/admin/reload-cookies', { psid, psidts });
-        showToast('Cookie 更新成功', 'success');
-        document.getElementById('reload-psid').value = '';
-        document.getElementById('reload-psidts').value = '';
-        await loadDashboard();
-    } catch (error) {
-        showToast(`更新失败: ${error.message}`, 'error');
     }
 }
 
@@ -437,23 +467,30 @@ function initEventListeners() {
         confirmBtn.addEventListener('click', submitAddAccount);
     }
 
-    // Modal close buttons
-    document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
-        btn.addEventListener('click', closeAddAccountModal);
-    });
-
-    // Modal overlay click to close
-    const modal = document.getElementById('addAccountModal');
-    if (modal) {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeAddAccountModal();
+    // Add account modal close buttons
+    const addModal = document.getElementById('addAccountModal');
+    if (addModal) {
+        addModal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+            btn.addEventListener('click', closeAddAccountModal);
+        });
+        addModal.addEventListener('click', (e) => {
+            if (e.target === addModal) closeAddAccountModal();
         });
     }
 
-    // Reload cookies form
-    const reloadForm = document.getElementById('reloadCookiesForm');
-    if (reloadForm) {
-        reloadForm.addEventListener('submit', reloadCookies);
+    // Update cookie modal
+    const updateModal = document.getElementById('updateCookieModal');
+    if (updateModal) {
+        updateModal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+            btn.addEventListener('click', closeUpdateCookieModal);
+        });
+        updateModal.addEventListener('click', (e) => {
+            if (e.target === updateModal) closeUpdateCookieModal();
+        });
+        const confirmUpdateBtn = document.getElementById('confirmUpdateCookie');
+        if (confirmUpdateBtn) {
+            confirmUpdateBtn.addEventListener('click', submitUpdateCookie);
+        }
     }
 
     // Playground send
@@ -520,6 +557,8 @@ window.app = {
     removeAccount,
     openAddAccountModal,
     closeAddAccountModal,
+    openUpdateCookieModal,
+    closeUpdateCookieModal,
     sendPlaygroundRequest,
     clearPlayground,
     clearLogs,

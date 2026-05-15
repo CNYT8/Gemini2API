@@ -130,3 +130,30 @@ async def check_single_account(account_id: str):
             status_code=404,
             content={"error": {"message": str(e), "type": "not_found"}},
         )
+
+
+class UpdateCookiesRequest(BaseModel):
+    psid: str
+    psidts: str = ""
+
+
+@router.put("/accounts/{account_id}/cookies")
+async def update_account_cookies(account_id: str, req: UpdateCookiesRequest):
+    for account in account_pool.accounts:
+        if account.id == account_id:
+            if account.client:
+                success = await account.client.reload_cookies(psid=req.psid, psidts=req.psidts)
+                if success:
+                    return {"status": "ok", "message": f"Account {account_id} cookies updated"}
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": {"message": "Cookie reload failed", "type": "reload_error"}},
+                )
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"message": "Account client not initialized", "type": "client_error"}},
+            )
+    return JSONResponse(
+        status_code=404,
+        content={"error": {"message": f"Account {account_id} not found", "type": "not_found"}},
+    )
