@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.core.account_pool import account_pool
 from app.core.auth import verify_api_key
+from app.core.fingerprint.version_sync import version_sync_loop
 from app.routers import openai, claude, gemini, research
 from app.routers import admin
 
@@ -34,8 +36,21 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     logger.info(f"API Key: {settings.api_key}")
     await account_pool.initialize()
+
+    version_task = None
+    if settings.version_sync_enabled:
+        version_task = asyncio.create_task(version_sync_loop())
+        logger.info("Chrome version sync task started")
+
     yield
+
     logger.info("Shutting down...")
+    if version_task:
+        version_task.cancel()
+        try:
+            await version_task
+        except asyncio.CancelledError:
+            pass
     await account_pool.shutdown()
 
 

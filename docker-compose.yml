@@ -6,6 +6,8 @@ services:
       - .env
     ports:
       - "5918:5918"
+    volumes:
+      - ./data:/app/data
     tmpfs:
       - /tmp
       - /home/appuser/.cache

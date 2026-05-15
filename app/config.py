@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     accounts_file: str = "accounts.json"
     rotation_strategy: str = "round-robin"
     max_concurrent_per_account: int = 3
+    fingerprint_config_path: str = "data/fingerprint.json"
+    version_sync_enabled: bool = True
+    version_sync_interval: int = 24
+    jitter_enabled: bool = True
 
     @field_validator("gemini_psid")
     @classmethod

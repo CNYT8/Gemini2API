@@ -1,0 +1,22 @@
+"""请求时间抖动 — 模拟人类操作间隔，避免机器行为特征"""
+
+import random
+import asyncio
+
+JITTER_PROFILES = {
+    "navigation": (200, 800),
+    "api_call": (50, 300),
+    "cookie_rotate": (1000, 3000),
+}
+
+
+async def apply_jitter(profile: str = "api_call") -> None:
+    """按场景应用随机延迟"""
+    min_ms, max_ms = JITTER_PROFILES.get(profile, (50, 200))
+    delay = random.uniform(min_ms, max_ms) / 1000.0
+    await asyncio.sleep(delay)
+
+
+def random_delay_factor() -> float:
+    """返回 0.8-1.2 之间的随机因子，用于调整固定间隔"""
+    return random.uniform(0.8, 1.2)
