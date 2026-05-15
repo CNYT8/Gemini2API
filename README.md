@@ -7,10 +7,11 @@
 <p>一套代码兼容 OpenAI / Claude / Gemini 三大主流 AI SDK，纯异步架构，零官方 Key，30 秒 Docker 部署。</p>
 
 <p>
-  <img src="https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Python-3.12+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Async-httpx-ff6b35?style=flat-square&logo=python&logoColor=white" alt="httpx">
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/httpx-Async-ff6b35?style=flat-square&logo=python&logoColor=white" alt="httpx">
+  <img src="https://img.shields.io/badge/Docker-20.10+-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/Chrome%20%7C%20Edge-Latest-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Browser">
   <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
 </p>
 
