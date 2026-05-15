@@ -6,10 +6,25 @@
 
 ## [Unreleased]
 
-## [0.4.0] - 2025-05-15
+## [0.5.0] - 2025-05-15
+
+### Added
+- 反检测与协议伪装系统，大幅延长 session 存活时间
+- 指纹配置管理（`data/fingerprint.json`），Chrome 版本/UA/TLS 指纹三者自动保持一致
+- 动态请求头构建器，按 Chrome 真实顺序排列，根据请求类型（GET/POST）动态调整 Sec-Fetch-* 值
+- 完整 Cookie 持久化（`data/cookies/`），自动捕获所有响应 Cookie 并持久化到磁盘
+- Chrome 版本自动同步，每 2小时轮询 Google 版本 API，检测到新版本自动更新指纹
+- 请求时间抖动，模拟人类操作间隔（导航 200-800ms / API 50-300ms / Cookie 轮换 1-3s）
+- 版本降级策略：当 curl_cffi 不支持最新 Chrome 版本时，自动使用最近的可用版本
 
 ### Changed
-- 替换 httpx 为 curl_cffi，使用 Chrome 120 TLS 指纹伪装，降低被 Google 识别为脚本流量的风险
+- GeminiWebClient 全面集成指纹系统，替换硬编码请求头和手动 Cookie 管理
+- TLS 指纹从固定 Chrome 120 升级为动态版本（当前 Chrome 131），支持自动跟进
+- 健康检查和 Cookie 刷新间隔加入随机因子（±20%），避免固定周期特征
+- Docker 新增 `data` 卷挂载，指纹配置和 Cookie 跨容器重建持久4.0] - 2025-05-15
+
+### Changed
+- 替换 httpx 为 curl_cffi，使用 Chrome TLS 指纹伪装，降低被 Google 识别为脚本流量的风险
 - Cookie 轮换逻辑适配 curl_cffi 的 cookies 解析方式
 
 ### Removed

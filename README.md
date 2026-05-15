@@ -48,6 +48,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2025-05-15 23:45:00 | 新增反检测与协议伪装系统：指纹一致性、完整 Cookie 持久化、Chrome 版本自动同步、请求时间抖动 |
 | 2025-05-15 23:10:00 | 替换 httpx 为 curl_cffi，模拟 Chrome TLS 指纹延长 session 寿命 |
 | 2025-05-15 21:30:00 | 新增 Web 管理面板（仪表盘、账号管理、实时日志、Playground） |
 | 2025-05-15 19:08:40 | 新增多账号轮询（负载均衡），支持 round-robin / least-used 策略 |
@@ -80,10 +81,18 @@
 - 每账号独立并发控制，避免单账号过载
 - 连续失败自动标记不健康，自动跳过故障账号
 - 后台自动轮换 Cookie，无感续期
-- **Chrome TLS 指纹模拟**：使用 curl_cffi 伪装 Chrome 120 TLS 握手，避免被 Google 识别为脚本流量
 - 热更新 Cookie API，无需重启容器
 - 支持通过 API 动态添加/移除账号
 - 健康检查历史记录，为 Web 面板提供数据支撑
+
+### 🛡 反检测与协议伪装
+
+- **TLS 指纹一致性**：UA、Sec-Ch-Ua、curl_cffi impersonate 三者版本始终同步（当前 Chrome 131）
+- **动态请求头**：按 Chrome 真实顺序排列，根据请求类型（导航 GET / API POST）动态调整 Sec-Fetch-* 值
+- **完整 Cookie 持久化**：自动捕获所有响应 Cookie 并持久化到磁盘，跨重启保留
+- **Chrome 版本自动同步**：每 24 小时轮询 Google 版本 API，检测到新版本自动更新指纹配置
+- **请求时间抖动**：模拟人类操作间隔（导航 200-800ms / API 50-300ms / Cookie 轮换 1-3s）
+- **版本降级策略**：当 curl_cffi 不支持最新 Chrome 版本时，自动使用最近的可用版本
 
 ### 🖥 Web 管理面板
 
@@ -96,7 +105,8 @@
 
 ### ⚡ 高性能架构
 
-- 基于 Python asyncio + curl_cffi，全链路非阻塞，Chrome TLS 指纹伪装
+- 基于 Python asyncio + curl_cffi，全链路非阻塞
+- Chrome TLS 指纹伪装 + 版本自动跟进，session 存活时间大幅延长
 - Pydantic 强类型校验，请求参数自动验证
 - 模块化设计，每个 API 格式独立路由文件
 - 失败自动重试，指数退避策略
@@ -127,14 +137,19 @@
 │                                (Client)   (Client)          │
 │                                                             │
 │  +-----------+    +----------------+    +---------------+   │
-│  |   Auth    |    | Cookie Manager |    | Health Check  |   │
-│  |  API Key  |    |  Auto-Rotate   |    |  Scheduled    |   │
+│  |   Auth    |    | Fingerprint    |    | Health Check  |   │
+│  |  API Key  |    | TLS+UA+Header  |    |  Scheduled    |   │
+│  +-----------+    +----------------+    +---------------+   │
+│                                                             │
+│  +-----------+    +----------------+    +---------------+   │
+│  |  Cookie   |    | Version Sync   |    |   Jitter      |   │
+│  | Persist   |    | Chrome Auto    |    | Human-like    |   │
 │  +-----------+    +----------------+    +---------------+   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
                            |
-                    Browser Cookies
-              (__Secure-1PSID + PSIDTS)
+              Fingerprint Layer (curl_cffi)
+          Chrome TLS + 动态 UA + 完整 Cookie
                            |
                            v
                    gemini.google.com
@@ -478,6 +493,10 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 | `ACCOUNTS_FILE` | ❌ | `accounts.json` | 多账号配置文件路径（不存在则使用环境变量单账号模式） |
 | `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `least-used`（最少使用） |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每账号最大并发请求数 |
+| `FINGERPRINT_CONFIG_PATH` | ❌ | `data/fingerprint.json` | 指纹配置文件路径 |
+| `VERSION_SYNC_ENABLED` | ❌ | `true` | 启用 Chrome 版本自动同步 |
+| `VERSION_SYNC_INTERVAL` | ❌ | `24` | 版本同步间隔（小时） |
+| `JITTER_ENABLED` | ❌ | `true` | 启用请求时间抖动（模拟人类行为） |
 
 ---
 
@@ -506,7 +525,13 @@ gemini2api/
 │   │   ├── gemini_client.py    # Gemini Web 核心客户端
 │   │   ├── account_pool.py     # 多账号池（负载均衡）
 │   │   ├── auth.py             # API Key 验证
-│   │   └── stream.py           # 流式工具函数
+│   │   ├── stream.py           # 流式工具函数
+│   │   └── fingerprint/        # 反检测与协议伪装
+│   │       ├── config.py       # 指纹配置管理（加载/保存/热更新）
+│   │       ├── header_builder.py # 动态请求头构建器
+│   │       ├── cookie_jar.py   # 完整 Cookie 持久化管理
+│   │       ├── version_sync.py # Chrome 版本自动同步
+│   │       └── jitter.py       # 请求时间抖动
 │   ├── models/                 # Pydantic 数据模型
 │   │   ├── openai.py
 │   │   ├── claude.py
@@ -520,19 +545,14 @@ gemini2api/
 │   └── utils/                  # 工具函数
 │       ├── tools.py            # 函数调用桥接
 │       └── prompt.py           # 消息格式化
+├── data/                       # 持久化数据（Docker 卷挂载）
+│   ├── fingerprint.json        # 指纹配置（自动生成）
+│   └── cookies/                # Cookie 持久化存储
 ├── static/                     # Web 管理面板
 │   ├── index.html              # 主页面（SPA）
 │   ├── login.html              # 登录页
 │   ├── app/                    # JS/CSS 核心模块
-│   │   ├── app.js              # 主应用逻辑
-│   │   ├── auth.js             # 认证模块
-│   │   ├── base.css            # 全局样式
-│   │   └── ...
 │   └── components/             # HTML 组件片段
-│       ├── section-dashboard.html
-│       ├── section-accounts.html
-│       ├── section-logs.html
-│       └── ...
 ├── Dockerfile                  # 多阶段构建
 ├── docker-compose.yml          # 编排配置
 ├── accounts.json.example       # 多账号配置示例
@@ -553,6 +573,7 @@ gemini2api/
 - [x] 账号状态定时检测
 - [x] 多账号轮询（负载均衡）
 - [x] Web 管理面板
+- [x] 反检测与协议伪装（TLS 指纹一致性、Cookie 持久化、版本自动同步）
 - [ ] 对话上下文持久化
 - [ ] 图片/文件上传支持
 - [ ] Prometheus 监控指标
