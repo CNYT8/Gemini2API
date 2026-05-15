@@ -58,30 +58,76 @@
 
 ### 1. 获取 Cookie
 
-1. 浏览器访问 [gemini.google.com](https://gemini.google.com) 并登录
-2. F12 打开开发者工具 → Application → Cookies → `gemini.google.com`
-3. 找到并复制 `__Secure-1PSID` 和 `__Secure-1PSIDTS`
+1. 使用 Chrome 或 Edge 浏览器访问 [gemini.google.com](https://gemini.google.com)
+2. 登录你的 Google 账号，确保能正常使用 Gemini 对话
+3. 按 `F12` 打开开发者工具
+4. 点击顶部 **Application**（应用程序）标签
+5. 左侧栏找到 **Cookies** → 点击 `https://gemini.google.com`
+6. 在 Cookie 列表中找到以下两个值：
 
-### 2. Docker 一键启动
+| Cookie 名称 | 说明 |
+|-------------|------|
+| `__Secure-1PSID` | 以 `g.` 开头的长字符串，通常几十个字符 |
+| `__Secure-1PSIDTS` | 较短的字符串 |
+
+> [!TIP]
+> 可以在搜索框中输入 `__Secure-1P` 快速过滤。双击 Value 列即可复制完整值。
+
+> [!WARNING]
+> Cookie 有有效期，过期后需要重新获取。如果服务突然无法使用，优先检查 Cookie 是否失效。
+
+### 2. Docker 部署
 
 ```bash
+# 克隆仓库
 git clone https://github.com/xwteam/gemini2api.git
 cd gemini2api
 
+# 创建环境变量文件
 cp .env.example .env
-# 编辑 .env，填入上一步获取的 Cookie 值
+```
 
+编辑 `.env` 文件，填入你的 Cookie：
+
+```env
+GEMINI_PSID=g.a000xxx...（粘贴你的 __Secure-1PSID 完整值）
+GEMINI_PSIDTS=sidts-xxx...（粘贴你的 __Secure-1PSIDTS 完整值）
+```
+
+> [!IMPORTANT]
+> 注意事项：
+> - 值不需要加引号
+> - 不要有多余的空格或换行
+> - 确保复制的是完整值，不要遗漏末尾字符
+
+启动服务：
+
+```bash
 docker compose up -d
+```
+
+查看日志确认启动成功：
+
+```bash
+docker compose logs -f
+# 看到 "Gemini client ready" 表示连接成功
+# 看到 "SNlM0e not found" 表示 Cookie 无效，需要重新获取
 ```
 
 ### 3. 验证服务
 
 ```bash
+# 健康检查
 curl http://localhost:4981/health
 # {"status":"ok","service":"gemini2api"}
 
+# 查看可用模型
 curl http://localhost:4981/openai/v1/models
-# 返回可用模型列表
+
+# 发送测试请求
+curl -X POST http://localhost:4981/openai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemini-2.0-flash","messages":[{"role":"user","content":"hi"}]}'
 ```
 
 ---
