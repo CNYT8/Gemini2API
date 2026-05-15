@@ -15,12 +15,12 @@
 </p>
 
 <p>
-  <a href="#-快速部署">快速部署</a> &bull;
   <a href="#-核心功能">核心功能</a> &bull;
+  <a href="#-快速部署">快速部署</a> &bull;
   <a href="#-接入示例">接入示例</a> &bull;
   <a href="#-api-端点">API 端点</a> &bull;
   <a href="#%EF%B8%8F-配置说明">配置说明</a> &bull;
-  <a href="#-开发路线">开发路线</a>
+  <a href="#%EF%B8%8F-开发路线">开发路线</a>
 </p>
 
 <br>
