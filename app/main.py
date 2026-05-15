@@ -9,7 +9,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.core.gemini_client import gemini_client
+from app.core.account_pool import account_pool
 from app.core.auth import verify_api_key
 from app.routers import openai, claude, gemini, research
 from app.routers import admin
@@ -28,10 +28,10 @@ limiter = Limiter(key_func=get_remote_address)
 async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     logger.info(f"API Key: {settings.api_key}")
-    await gemini_client.initialize()
+    await account_pool.initialize()
     yield
     logger.info("Shutting down...")
-    await gemini_client.shutdown()
+    await account_pool.shutdown()
 
 
 app = FastAPI(

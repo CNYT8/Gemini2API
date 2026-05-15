@@ -45,9 +45,9 @@ DEFAULT_HEADERS = {
 
 
 class GeminiWebClient:
-    def __init__(self):
-        self._psid = settings.gemini_psid
-        self._psidts = settings.gemini_psidts
+    def __init__(self, psid: str | None = None, psidts: str | None = None):
+        self._psid = psid or settings.gemini_psid
+        self._psidts = psidts or settings.gemini_psidts
         self._session_token: str = ""
         self._available_models: list[str] = []
         self._lock = Lock()

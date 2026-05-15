@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-05-15
+
+### Added
+- 多账号轮询（负载均衡）功能，支持 round-robin 和 least-used 两种策略
+- 账号池管理 API（`GET/POST/DELETE /admin/accounts`）
+- 单账号状态检测接口（`GET /admin/accounts/{id}/check`）
+- 每账号独立并发控制（`MAX_CONCURRENT_PER_ACCOUNT`）
+- `accounts.json` 多账号配置文件支持
+- 连续失败自动标记不健康，请求自动跳过故障账号
+
+### Changed
+- 架构重构：从单客户端模式升级为账号池模式
+- 所有路由通过 AccountPool 分发请求，支持多账号透明切换
+- 向后兼容：无 `accounts.json` 时自动使用环境变量单账号模式
+
 ## [0.2.0] - 2025-05-15
 
 ### Added

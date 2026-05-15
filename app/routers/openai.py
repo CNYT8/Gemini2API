@@ -7,7 +7,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.core.gemini_client import gemini_client
+from app.core.account_pool import account_pool as gemini_client
 from app.core.stream import split_into_chunks, format_sse
 from app.models.openai import (
     ChatRequest, ChatResponse, Choice, ChoiceMessage,

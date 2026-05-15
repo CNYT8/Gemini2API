@@ -1,0 +1,16 @@
+{
+  "accounts": [
+    {
+      "id": "account-0",
+      "psid": "your__Secure-1PSID_cookie_value_1",
+      "psidts": "your__Secure-1PSIDTS_cookie_value_1",
+      "label": "Account 1"
+    },
+    {
+      "id": "account-1",
+      "psid": "your__Secure-1PSID_cookie_value_2",
+      "psidts": "your__Secure-1PSIDTS_cookie_value_2",
+      "label": "Account 2"
+    }
+  ]
+}

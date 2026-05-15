@@ -5,7 +5,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.core.gemini_client import gemini_client
+from app.core.account_pool import account_pool as gemini_client
 from app.core.stream import format_sse
 from app.models.gemini import DeepResearchRequest, InteractionRequest
 

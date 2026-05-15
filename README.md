@@ -48,6 +48,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2025-05-15 | 新增多账号轮询（负载均衡），支持 round-robin / least-used 策略 |
 | 2025-05-15 | 新增账号状态定时检测、健康检查历史记录 API |
 | 2025-05-15 | 新增 Cookie 热更新接口，无需重启即可刷新凭证 |
 | 2025-05-14 | 新增 Deep Research 深度研究功能 |
@@ -71,11 +72,14 @@
 - 支持 `Authorization: Bearer` 和 `x-api-key` 两种认证方式
 - 首次部署自动生成密钥，用户可自定义修改
 
-### 🔄 Cookie 自愈与账号管理
+### 🔄 多账号轮询与 Cookie 自愈
 
+- **多账号负载均衡**：支持 round-robin（轮询）和 least-used（最少使用）两种策略
+- 每账号独立并发控制，避免单账号过载
+- 连续失败自动标记不健康，自动跳过故障账号
 - 后台自动轮换 Cookie，无感续期
-- 定时主动检测账号状态，连续失败自动标记不健康
 - 热更新 Cookie API，无需重启容器
+- 支持通过 API 动态添加/移除账号
 - 健康检查历史记录，为 Web 面板提供数据支撑
 
 ### ⚡ 高性能架构
@@ -101,9 +105,14 @@
 │       |                                                    │
 │       v                                                    │
 │  +-----------+    +----------------+    +--------------+   │
-│  |  Routes   |--->|  Translation   |--->| Gemini Web   |   │
-│  | (FastAPI) |    | Multi->Gemini  |    |   Client     |   │
+│  |  Routes   |--->|  Translation   |--->| Account Pool |   │
+│  | (FastAPI) |    | Multi->Gemini  |    | (负载均衡)   |   │
 │  +-----------+    +----------------+    +--------------+   │
+│                                              |             │
+│                                    ┌─────────┼─────────┐   │
+│                                    v         v         v   │
+│                               Account-0  Account-1  ...   │
+│                               (Client)   (Client)         │
 │                                                            │
 │  +-----------+    +----------------+    +--------------+   │
 │  |   Auth    |    | Cookie Manager |    | Health Check |   │
@@ -117,7 +126,7 @@
                           |
                           v
                   gemini.google.com
-              /BardChatUi/StreamGenerate
+/StreamGenerate
 ```
 
 ---
@@ -196,9 +205,35 @@ docker compose up -d
 
 ```bash
 docker compose logs -f
-# 看到 "Gemini client ready" 表示连接成功
+# 看到 "Account pool ready: 1/1 active" 表示账号池就绪
 # 看到 "SNlM0e not found" 表示 Cookie 无效，需要重新获取
 ```
+
+### 多账号配置（可选）
+
+如需使用多个 Google 账号实现负载均衡，创建 `accounts.json`：
+
+```json
+{
+  "accounts": [
+    {
+      "id": "account-0",
+      "psid": "g.a000xxx...",
+      "psidts": "sidts-xxx...",
+      "label": "主账号"
+    },
+    {
+      "id": "account-1",
+      "psid": "g.a000yyy...",
+      "psidts": "sidts-yyy...",
+      "label": "备用账号"
+    }
+  ]
+}
+```
+
+> [!TIP]
+> 不创建 `accounts.json` 时，服务自动使用 `.env` 中的单账号模式。也可以通过 `POST /admin/accounts` API 在运行时动态添加账号。
 
 ### 3. 验证
 
@@ -359,10 +394,14 @@ response = client.chat.completions.create(
 
 | 方法 | 端点 | 功能 |
 |------|------|------|
+| GET | `/status` | 服务状态（账号池概览 + 轮询策略） |
+| GET | `/accounts` | 所有账号列表及状态 |
+| POST | `/accounts` | 动态添加新账号 |
+| DELETE | `/accounts/{id}` | 移除指定账号 |
+| GET | `/accounts/{id}/check` | 检测单个账号状态 |
+| GET | `/check-account` | 检测所有账号状态 |
 | POST | `/reload-cookies` | 热更新 Cookie（无需重启容器） |
-| GET | `/status` | 服务状态（健康状态 + 可用模型数） |
-| GET | `/check-account` | 实时检测账号状态 |
-| GET | `/health-history` | 最近 20 条健康检查记录 |
+| GET | `/health-history` | 最近健康检查记录 |
 
 ### 系统
 
@@ -375,7 +414,24 @@ response = client.chat.completions.create(
 **管理接口使用示例：**
 
 ```bash
-# 热更新 Cookie
+# 查看账号池状态
+curl http://localhost:5918/admin/accounts \
+  -H "Authorization: Bearer sk-你的API密钥"
+
+# 动态添加新账号
+curl -X POST http://localhost:5918/admin/accounts \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
+  -d '{"psid":"g.a000新的值","psidts":"sidts-新的值","label":"我的第二个账号"}'
+
+# 移除账号
+curl -X DELETE http://localhost:5918/admin/accounts/account-1 \"Authorization: Bearer sk-你的API密钥"
+
+# 检测单个账号状态
+curl http://localhost:5918/admin/accounts/account-0/check \
+  -H "Authorization: Bearer sk-你的API密钥"
+
+# 热更新 Cookie（更新第一个账号）
 curl -X POST http://localhost:5918/admin/reload-cookies \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk-你的API密钥" \
@@ -383,14 +439,6 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 
 # 从 .env 重新读取 Cookie
 curl -X POST http://localhost:5918/admin/reload-cookies \
-  -H "Authorization: Bearer sk-你的API密钥"
-
-# 主动检测账号状态
-curl http://localhost:5918/admin/check-account \
-  -H "Authorization: Bearer sk-你的API密钥"
-
-# 查看健康检查历史
-curl http://localhost:5918/admin/health-history \
   -H "Authorization: Bearer sk-你的API密钥"
 ```
 
@@ -412,6 +460,9 @@ curl http://localhost:5918/admin/health-history \
 | `RATE_LIMIT_MAX` | ❌ | `10` | 窗口内最大请求数 |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | 启用定时账号状态检测 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
+| `ACCOUNTS_FILE` | ❌ | `accounts.json` | 多账号配置文件路径（不存在则使用环境变量单账号模式） |
+| `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `least-used`（最少使用） |
+| `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每账号最大并发请求数 |
 
 ---
 
@@ -438,6 +489,7 @@ gemini2api/
 │   ├── config.py               # Pydantic 配置管理
 │   ├── core/
 │   │   ├── gemini_client.py    # Gemini Web 核心客户端
+│   │   ├── account_pool.py     # 多账号池（负载均衡）
 │   │   ├── auth.py             # API Key 验证
 │   │   └── stream.py           # 流式工具函数
 │   ├── models/                 # Pydantic 数据模型
@@ -455,6 +507,7 @@ gemini2api/
 │       └── prompt.py           # 消息格式化
 ├── Dockerfile                  # 多阶段构建
 ├── docker-compose.yml          # 编排配置
+├── accounts.json.example       # 多账号配置示例
 ├── requirements.txt
 └── .env.example
 ```
@@ -470,7 +523,7 @@ gemini2api/
 - [x] API Key 认证
 - [x] Cookie 热更新 API
 - [x] 账号状态定时检测
-- [ ] 多账号轮询（负载均衡）
+- [x] 多账号轮询（负载均衡）
 - [ ] Web 管理面板
 - [ ] 对话上下文持久化
 - [ ] 图片/文件上传支持

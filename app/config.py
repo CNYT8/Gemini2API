@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     rate_limit_max: int = 10
     health_check_enabled: bool = True
     health_check_interval: int = 5
+    accounts_file: str = "accounts.json"
+    rotation_strategy: str = "round-robin"
+    max_concurrent_per_account: int = 3
 
     @field_validator("gemini_psid")
     @classmethod
