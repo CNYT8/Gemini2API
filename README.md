@@ -51,6 +51,7 @@
 | 模型自动发现 | ✅ | 启动时从 Web 页面提取可用模型列表 |
 | 速率限制 | ✅ | 可选，基于 IP 的滑动窗口限流 |
 | 健康检查 | ✅ | `/health` 端点，适配 Docker 健康探针 |
+| 账号状态检测 | ✅ | 定时主动验证 Cookie 有效性，支持历史记录查询 |
 
 ---
 
@@ -146,6 +147,8 @@ curl -X POST http://localhost:5918/openai/v1/chat/completions \
 | `RATE_LIMIT_ENABLED` | ❌ | `false` | 启用限流 |
 | `RATE_LIMIT_WINDOW` | ❌ | `60` | 限流窗口（秒） |
 | `RATE_LIMIT_MAX` | ❌ | `10` | 窗口内最大请求数 |
+| `HEALTH_CHECK_ENABLED` | ❌ | `true` | 启用定时账号状态检测 |
+| `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
 
 ---
 
@@ -279,6 +282,8 @@ response = client.chat.completions.create(
 |------|------|------|
 | POST | `/reload-cookies` | 热更新 Cookie（无需重启容器） |
 | GET | `/status` | 服务状态（健康状态 + 可用模型数） |
+| GET | `/check-account` | 实时检测账号状态（主动验证 Cookie 有效性） |
+| GET | `/health-history` | 最近 20 条健康检查记录 |
 
 > 管理接口同样需要 API Key 验证。
 
@@ -297,6 +302,15 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 
 # 查看服务状态
 curl http://localhost:5918/admin/status \
+  -H "Authorization: Bearer sk-你的API密钥"
+
+# 主动检测账号状态
+curl http://localhost:5918/admin/check-account \
+  -H "Authorization: Bearer sk-你的API密钥"
+# 返回：{"valid":true,"has_token":true,"models_count":12,"checked_at":"..."}
+
+# 查看健康检查历史
+curl http://localhost:5918/admin/health-history \
   -H "Authorization: Bearer sk-你的API密钥"
 ```
 

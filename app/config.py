@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = False
     rate_limit_window: int = 60
     rate_limit_max: int = 10
+    health_check_enabled: bool = True
+    health_check_interval: int = 5
 
     @field_validator("gemini_psid")
     @classmethod

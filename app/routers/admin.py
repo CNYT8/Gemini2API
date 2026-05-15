@@ -50,3 +50,17 @@ async def admin_status():
         "models_count": len(gemini_client.models),
         "models": gemini_client.models[:10],
     }
+
+
+@router.get("/check-account")
+async def check_account():
+    result = await gemini_client.check_account()
+    return result
+
+
+@router.get("/health-history")
+async def health_history():
+    return {
+        "total": len(gemini_client.check_history),
+        "records": gemini_client.check_history,
+    }

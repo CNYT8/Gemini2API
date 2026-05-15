@@ -5,6 +5,8 @@ import asyncio
 import logging
 from pathlib import Path
 from threading import Lock
+from collections import deque
+from datetime import datetime, timezone
 
 import httpx
 
@@ -51,7 +53,10 @@ class GeminiWebClient:
         self._lock = Lock()
         self._healthy = False
         self._refresh_task: asyncio.Task | None = None
+        self._health_check_task: asyncio.Task | None = None
         self._http: httpx.AsyncClient | None = None
+        self._check_history: deque[dict] = deque(maxlen=20)
+        self._last_check_result: dict | None = None
 
     async def initialize(self):
         self._http = httpx.AsyncClient(
@@ -77,6 +82,9 @@ class GeminiWebClient:
             self._save_cookies_to_cache()
             self._refresh_task = asyncio.create_task(self._auto_refresh_loop())
 
+        if settings.health_check_enabled:
+            self._health_check_task = asyncio.create_task(self._health_check_loop())
+
     @property
     def is_healthy(self) -> bool:
         return self._healthy
@@ -84,6 +92,73 @@ class GeminiWebClient:
     @property
     def models(self) -> list[str]:
         return list(self._available_models)
+
+    @property
+    def last_check_result(self) -> dict | None:
+        return self._last_check_result
+
+    @property
+    def check_history(self) -> list[dict]:
+        return list(self._check_history)
+
+    async def check_account(self) -> dict:
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            cookies = self._build_cookies()
+            resp = await self._http.get(GEMINI_APP_EN_URL, cookies=cookies)
+
+            if resp.status_code != 200:
+                result = {
+                    "valid": False,
+                    "has_token": False,
+                    "models_count": 0,
+                    "checked_at": now,
+                    "error": f"HTTP {resp.status_code}",
+                }
+            else:
+                body = resp.text
+                token_match = re.search(r'"SNlM0e":"([^"]+)"', body)
+                model_hits = re.findall(r"gemini-[a-zA-Z0-9.\-]+", body)
+                models_found = sorted(set(m for m in model_hits if len(m) > 10))
+
+                result = {
+                    "valid": token_match is not None,
+                    "has_token": token_match is not None,
+                    "models_count": len(models_found),
+                    "checked_at": now,
+                }
+        except Exception as e:
+            result = {
+                "valid": False,
+                "has_token": False,
+                "models_count": 0,
+                "checked_at": now,
+                "error": str(e),
+            }
+
+        self._last_check_result = result
+        self._check_history.append(result)
+        return result
+
+    async def _health_check_loop(self):
+        interval = settings.health_check_interval * 60
+        consecutive_failures = 0
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                result = await self.check_account()
+                if result["valid"]:
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
+                    logger.warning(f"Health check failed ({consecutive_failures}x)")
+                    if consecutive_failures >= 3:
+                        self._healthy = False
+                        logger.error("Account unhealthy: 3 consecutive check failures")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Health check loop error: {e}")
 
     def _cookie_cache_path(self) -> Path:
         digest = hashlib.sha256(self._psid.encode()).hexdigest()[:16]
@@ -269,6 +344,12 @@ class GeminiWebClient:
             self._refresh_task.cancel()
             try:
                 await self._refresh_task
+            except asyncio.CancelledError:
+                pass
+        if self._health_check_task:
+            self._health_check_task.cancel()
+            try:
+                await self._health_check_task
             except asyncio.CancelledError:
                 pass
         if self._http:
