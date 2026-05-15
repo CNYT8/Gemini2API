@@ -19,6 +19,6 @@ COPY app/ ./app/
 RUN chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 4981
+EXPOSE 5918
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4981"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5918"]

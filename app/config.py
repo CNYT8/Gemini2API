@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     gemini_psidts: str
     refresh_interval: int = 5
     max_retries: int = 3
-    port: int = 4981
+    port: int = 5918
     log_level: str = "info"
     rate_limit_enabled: bool = False
     rate_limit_window: int = 60

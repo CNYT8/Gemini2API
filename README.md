@@ -118,14 +118,14 @@ docker compose logs -f
 
 ```bash
 # 健康检查
-curl http://localhost:4981/health
+curl http://localhost:5918/health
 # {"status":"ok","service":"gemini2api"}
 
 # 查看可用模型
-curl http://localhost:4981/openai/v1/models
+curl http://localhost:5918/openai/v1/models
 
 # 发送测试请求
-curl -X POST http://localhost:4981/openai/v1/chat/completions \
+curl -X POST http://localhost:5918/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gemini-2.0-flash","messages":[{"role":"user","content":"hi"}]}'
 ```
@@ -140,7 +140,7 @@ curl -X POST http://localhost:4981/openai/v1/chat/completions \
 | `GEMINI_PSIDTS` | ✅ | — | 浏览器 `__Secure-1PSIDTS` |
 | `REFRESH_INTERVAL` | ❌ | `5` | Cookie 刷新周期（分钟） |
 | `MAX_RETRIES` | ❌ | `3` | 失败重试次数（指数退避） |
-| `PORT` | ❌ | `4981` | 服务端口 |
+| `PORT` | ❌ | `5918` | 服务端口 |
 | `LOG_LEVEL` | ❌ | `info` | 日志级别（debug/info/warning/error） |
 | `RATE_LIMIT_ENABLED` | ❌ | `false` | 启用限流 |
 | `RATE_LIMIT_WINDOW` | ❌ | `60` | 限流窗口（秒） |
@@ -157,7 +157,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="any-string",
-    base_url="http://localhost:4981/openai/v1"
+    base_url="http://localhost:5918/openai/v1"
 )
 
 for chunk in client.chat.completions.create(
@@ -175,7 +175,7 @@ import anthropic
 
 client = anthropic.Anthropic(
     api_key="any-string",
-    base_url="http://localhost:4981/claude"
+    base_url="http://localhost:5918/claude"
 )
 
 msg = client.messages.create(
@@ -190,12 +190,12 @@ print(msg.content[0].text)
 
 ```bash
 # 非流式请求
-curl -X POST http://localhost:4981/openai/v1/chat/completions \
+curl -X POST http://localhost:5918/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gemini-2.0-flash","messages":[{"role":"user","content":"Hi"}]}'
 
 # 流式请求
-curl -X POST http://localhost:4981/openai/v1/chat/completions \
+curl -X POST http://localhost:5918/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gemini-2.0-flash","messages":[{"role":"user","content":"Hi"}],"stream":true}'
 ```
