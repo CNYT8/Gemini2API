@@ -624,6 +624,17 @@ function initEventListeners() {
         pgSend.addEventListener('click', sendPlaygroundRequest);
     }
 
+    // Playground textarea: Enter to send, Shift+Enter for newline
+    const pgMessage = document.getElementById('pg-message');
+    if (pgMessage) {
+        pgMessage.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendPlaygroundRequest();
+            }
+        });
+    }
+
     // Playground clear
     const pgClear = document.getElementById('pg-clear-btn');
     if (pgClear) {
