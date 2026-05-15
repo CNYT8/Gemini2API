@@ -230,7 +230,7 @@ class GeminiWebClient:
             body = '[000,"-0000000000000000000"]'
             resp = await self._http.post(
                 ROTATE_COOKIES_URL,
-                content=body.encode(),
+                data=body.encode(),
                 cookies=cookies,
                 headers={
                     "Content-Type": "application/json",
@@ -396,6 +396,11 @@ class GeminiWebClient:
         self._session_token = ""
         self._healthy = False
         self._last_reload_error = ""
+
+        # Recreate HTTP session to avoid accumulated cookie conflicts
+        if self._http:
+            await self._http.close()
+        self._http = AsyncSession(impersonate=self._current_target, timeout=60)
 
         self._cookie_jar.set("__Secure-1PSID", self._psid)
         if self._psidts:
