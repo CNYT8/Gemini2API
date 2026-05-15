@@ -15,17 +15,15 @@
 </p>
 
 <p>
+  <a href="#-最近更新">最近更新</a> &bull;
   <a href="#-核心功能">核心功能</a> &bull;
-  <a href="#-技术架构">技术架构</a> &bull;
+  <a href="#-系统要求">系统要求</a> &bull;
   <a href="#-快速部署">快速部署</a> &bull;
   <a href="#-接入示例">接入示例</a> &bull;
   <a href="#-api-端点">API 端点</a> &bull;
   <a href="#-配置说明">配置说明</a> &bull;
-  <a href="#-开发路线">开发路线</a> &bull;
-  <a href="#-贡献">贡献</a> &bull;
-  <a href="#-star-history">Star History</a> &bull;
-  <a href="#-许可协议">许可协议</a> &bull;
-  <a href="#-免责声明">免责声明</a>
+  <a href="#-注意事项">注意事项</a> &bull;
+  <a href="#-开发路线">开发路线</a>
 </p>
 
 <br>
@@ -42,6 +40,18 @@
 
 > [!WARNING]
 > 本项目与 Google 无关。项目通过逆向工程获取的浏览器 Cookie 实现功能，可能不符合 Google 服务条款。使用风险自负，作者不对任何账号处罚或数据丢失承担责任。
+
+---
+
+## 📝 最近更新
+
+| 日期 | 更新内容 |
+|------|----------|
+| 2025-05-15 | 新增账号状态定时检测、健康检查历史记录 API |
+| 2025-05-15 | 新增 Cookie 热更新接口，无需重启即可刷新凭证 |
+| 2025-05-14 | 新增 Deep Research 深度研究功能 |
+| 2025-05-14 | 支持 OpenAI / Claude / Gemini 三格式函数调用 |
+| 2025-05-13 | 项目初始化，基础代理功能上线 |
 
 ---
 
@@ -108,6 +118,20 @@
                   gemini.google.com
               /BardChatUi/StreamGenerate
 ```
+
+---
+
+## 📋 系统要求
+
+| 依赖 | 版本 | 说明 |
+|------|------|------|
+| Python | 3.12+ | 推荐 3.12，低版本未测试 |
+| Docker | 20.10+ | 可选，推荐使用 Docker 部署 |
+| Google 账号 | — | 需能正常访问 [gemini.google.com](https://gemini.google.com) |
+| 浏览器 | Chrome / Edge | 用于获取 Cookie（仅部署时需要） |
+
+> [!TIP]
+> 使用 Docker 部署无需本地安装 Python 环境，只需 Docker 和有效的 Cookie 即可。
 
 ---
 
@@ -385,6 +409,20 @@ curl http://localhost:5918/admin/health-history \
 | `RATE_LIMIT_MAX` | ❌ | `10` | 窗口内最大请求数 |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | 启用定时账号状态检测 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
+
+---
+
+## ⚠ 注意事项
+
+1. **Cookie 有效期**：Google Cookie 会定期过期（通常数小时到数天不等）。服务内置自动刷新机制，但如果账号被登出或密码变更，需要重新获取 Cookie。
+
+2. **流式输出**：所有 API 端点默认流式返回。设置 `stream: false` 时，服务内部仍以流式方式接收数据，收集完毕后一次性返回完整 JSON。
+
+3. **模型可用性**：可用模型列表取决于你的 Google 账号权限。免费账号和 Gemini Advanced 账号看到的模型不同，服务启动时会自动检测。
+
+4. **请求频率**：即使关闭了内置限流（`RATE_LIMIT_ENABLED=false`），Google 侧仍有频率限制。高频请求可能触发验证码或临时封禁，建议合理控制调用频率。
+
+5. **网络环境**：部署服务器需能直接访问 `gemini.google.com`，部分地区可能需要配置代理。
 
 ---
 
