@@ -98,7 +98,10 @@
 }
 
 .config-description {
-    display: fle   padding: 0.875rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1rem;
     background: var(--info-bg);
     border: 1px solid var(--info-border);
     border-radius: var(--radius-lg);
@@ -119,7 +122,7 @@
     gap: 1rem;
 }
 
-.reload-formon[type="submit"] {
+.reload-form button[type="submit"] {
     align-self: flex-start;
 }
 

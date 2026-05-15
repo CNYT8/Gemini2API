@@ -47,6 +47,7 @@
     /* 辅助色透明度版本 */
     --primary-10: rgba(5, 150, 105, 0.1);
     --primary-20: rgba(5, 150, 105, 0.2);
+    --primary-30: rgba(5, 150, 105, 0.3);
     --success-10: rgba(16, 185, 129, 0.1);
     --warning-15: rgba(245, 158, 11, 0.15);
     --danger-10: rgba(239, 68, 68, 0.1);
@@ -54,6 +55,19 @@
 
     /* 遮罩背景 */
     --overlay-bg: rgba(0, 0, 0, 0.6);
+
+    /* 玻璃效果加强版 */
+    --bg-glass-strong: rgba(255, 255, 255, 0.95);
+
+    /* 信息/状态背景 */
+    --info-bg: rgba(59, 130, 246, 0.08);
+    --info-bg-light: rgba(59, 130, 246, 0.04);
+    --info-border: rgba(59, 130, 246, 0.2);
+    --info-text: #1d4ed8;
+    --success-bg: rgba(16, 185, 129, 0.1);
+    --success-text: #059669;
+    --danger-bg: rgba(239, 68, 68, 0.1);
+    --danger-text: #dc2626;
 
     /* 代码块和日志区域 */
     --code-bg: #1e1e1e;
@@ -70,7 +84,18 @@
     --success-color: #34d399;
     --danger-color: #f87171;
     --warning-color: #fbbf24;
-    ---border-hover: #475569;
+    --bg-primary: #1e293b;
+    --bg-secondary: #0f172a;
+    --bg-tertiary: #334155;
+    --bg-glass: rgba(30, 41, 59, 0.85);
+    --bg-glass-strong: rgba(15, 23, 42, 0.95);
+
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-tertiary: #64748b;
+
+    --border-color: #334155;
+    --border-hover: #475569;
 
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
@@ -78,9 +103,10 @@
     --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
     --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 
-    --primary-10: rgba(16, 185, 129, 0.1);
-    --primary-20: rgba(16, 185, 129, 0.2);
-    --success-10: rgba(16, 185, 129, 0.1);
+    --primary-10: rgba(52, 211, 153, 0.1);
+    --primary-20: rgba(52, 211, 153, 0.2);
+    --primary-30: rgba(52, 211, 153, 0.3);
+    --success-10: rgba(52, 211, 153, 0.1);
     --warning-15: rgba(251, 191, 36, 0.15);
     --danger-10: rgba(248, 113, 113, 0.1);
     --info-10: rgba(96, 165, 250, 0.1);
@@ -89,6 +115,17 @@
 
     --code-bg: #0d1117;
     --code-text: #e6edf3;
+
+    --info-bg: rgba(59, 130, 246, 0.1);
+    --info-bg-light: rgba(59, 130, 246, 0.05);
+    --info-border: rgba(59, 130, 246, 0.2);
+    --info-text: #93c5fd;
+    --info-color: #60a5fa;
+
+    --success-bg: rgba(52, 211, 153, 0.1);
+    --success-text: #6ee7b7;
+    --danger-bg: rgba(248, 113, 113, 0.1);
+    --danger-text: #fca5a5;
 }
 
 /* 基础样式 */
@@ -516,17 +553,9 @@ textarea.form-control {
     opacity: 1;
 }
 
-.modal {
-    background: var(--bg-primary);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-xl);
-    max-width: 600px;
-    width: 90%;
-    max-height: 90vh;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    animation: modalIn 0.3s ease;
+@keyframes modalIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .modal-header {
@@ -538,7 +567,8 @@ textarea.form-control {
 }
 
 .modal-header h3 {
-    font-size:ght: 700;
+    font-size: 1.25rem;
+    font-weight: 700;
     color: var(--text-primary);
 }
 

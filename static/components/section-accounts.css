@@ -55,7 +55,8 @@
     width: 32px;
     height: 32px;
     border-radius: var(--radius-md);
-    border: 1px solid var(--bordebackground: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
     color: var(--text-secondary);
     cursor: pointer;
     transition: var(--transition);
@@ -145,7 +146,7 @@
     justify-content: center;
 }
 
-.modal.show {
+.modal.active {
     display: flex;
 }
 
