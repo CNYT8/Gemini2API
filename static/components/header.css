@@ -136,6 +136,47 @@
     display: inline-flex;
 }
 
+.header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: var(--transition);
+}
+
+.header-btn:hover {
+    background: var(--bg-tertiary);
+}
+
+.header-btn:active {
+    transform: scale(0.98);
+}
+
+.header-btn i {
+    font-size: 14px;
+}
+
+.restart-btn:hover {
+    color: var(--warning-color, #f59e0b);
+    border-color: var(--warning-color, #f59e0b);
+}
+
+.restart-btn.restarting i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .logout-btn {
     display: inline-flex;
     align-items: center;

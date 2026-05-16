@@ -648,6 +648,23 @@ function initEventListeners() {
         pgClear.addEventListener('click', clearPlayground);
     }
 
+    // Restart
+    const restartBtn = document.getElementById('restartBtn');
+    if (restartBtn) {
+        restartBtn.addEventListener('click', async () => {
+            if (confirm('确定要重启服务吗？')) {
+                restartBtn.classList.add('restarting');
+                try {
+                    await apiCall('/admin/restart', { method: 'POST' });
+                    showToast('服务正在重启...', 'success');
+                } catch (error) {
+                    showToast('重启失败: ' + error.message, 'error');
+                    restartBtn.classList.remove('restarting');
+                }
+            }
+        });
+    }
+
     // Logout
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
