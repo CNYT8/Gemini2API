@@ -8,6 +8,7 @@ services:
       - "5918:5918"
     volumes:
       - ./data:/app/data
+      - ./api:/app/api
     tmpfs:
       - /tmp
       - /home/appuser/.cache

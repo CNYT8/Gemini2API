@@ -10,17 +10,15 @@
             <div class="uptime-value" id="uptime-display">0天 0小时 0分 0秒</div>
             <div class="uptime-label">运行时间</div>
         </div>
-        <div class="qr-cards">
-            <div class="qr-card">
-                <img src="img/wechat-qr.png" alt="微信二维码" class="qr-img">
-                <p class="qr-title">扫码进群，注明来意</p>
-                <p class="qr-desc">添加微信获取更多技术支持和交流</p>
-            </div>
-            <div class="qr-card">
-                <img src="img/sponsor-qr.png" alt="赞助二维码" class="qr-img">
-                <p class="qr-title">扫码赞助</p>
-                <p class="qr-desc">您的赞助是项目持续发展的动力</p>
-            </div>
+        <div class="qr-cards" id="qrCardsContainer">
+        </div>
+    </div>
+
+    <!-- Image Lightbox -->
+    <div class="lightbox-overlay" id="lightboxOverlay">
+        <div class="lightbox-content">
+            <img id="lightboxImage" src="" alt="">
+            <button class="lightbox-close" id="lightboxClose"><i class="fas fa-times"></i></button>
         </div>
     </div>
 

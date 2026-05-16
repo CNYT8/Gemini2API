@@ -125,6 +125,7 @@ async function loadDashboard() {
         renderModelsList(modelsSet);
         updatePlaygroundModels(modelsSet);
         await loadSystemInfo();
+        await loadQrCards();
     } catch (error) {
         console.error('加载仪表盘失败:', error);
     }
@@ -165,6 +166,46 @@ async function loadSystemInfo() {
     } catch (error) {
         console.error('加载系统信息失败:', error);
     }
+}
+
+async function loadQrCards() {
+    const container = document.getElementById('qrCardsContainer');
+    if (!container) return;
+    try {
+        const resp = await fetch('/api-assets/qr-config.json');
+        if (!resp.ok) return;
+        const config = await resp.json();
+        container.innerHTML = (config.cards || []).map(card => `
+            <div class="qr-card">
+                <p class="qr-title">${card.title}</p>
+                <img src="/api-assets/${card.image}" alt="${card.title}" class="qr-img" onclick="window.app.openLightbox(this.src)">
+                <p class="qr-desc">${card.description}</p>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error('加载二维码配置失败:', e);
+    }
+}
+
+function openLightbox(src) {
+    const overlay = document.getElementById('lightboxOverlay');
+    const img = document.getElementById('lightboxImage');
+    if (overlay && img) {
+        img.src = src;
+        overlay.classList.add('active');
+    }
+}
+
+function closeLightbox() {
+    const overlay = document.getElementById('lightboxOverlay');
+    if (overlay) overlay.classList.remove('active');
+}
+
+function initLightbox() {
+    const overlay = document.getElementById('lightboxOverlay');
+    const closeBtn = document.getElementById('lightboxClose');
+    if (overlay) overlay.addEventListener('click', (e) => { if (e.target === overlay) closeLightbox(); });
+    if (closeBtn) closeBtn.addEventListener('click', closeLightbox);
 }
 
 function renderAccountStatusGrid(accounts) {
@@ -645,6 +686,7 @@ async function initApp() {
     initUsageStats();
     initSettings();
     initApiKeys();
+    initLightbox();
 
     console.log('Gemini2API 管理控制台已加载');
 }
@@ -659,7 +701,8 @@ window.app = {
     closeUpdateCookieModal,
     sendPlaygroundRequest,
     clearPlayground,
-    copyModel
+    copyModel,
+    openLightbox
 };
 
 // Wait for components to load, then initialize

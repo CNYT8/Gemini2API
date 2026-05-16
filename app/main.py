@@ -198,6 +198,9 @@ async def index_page():
     return HTMLResponse("<h1>Panel not found</h1>", status_code=404)
 
 
+API_DIR = Path(__file__).parent.parent / "api"
+
+app.mount("/api-assets", StaticFiles(directory=str(API_DIR)), name="api-assets")
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 
