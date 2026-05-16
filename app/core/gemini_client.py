@@ -133,8 +133,8 @@ class GeminiWebClient:
             else:
                 body = resp.text
                 token_match = re.search(r'"SNlM0e":"([^"]+)"', body)
-                model_hits = re.findall(r"gemini-[a-zA-Z0-9.\-]+", body)
-                models_found = sorted(set(m for m in model_hits if len(m) > 10))
+                model_hits = re.findall(r"gemini-\d+\.\d+[a-zA-Z0-9.\-]+", body)
+                models_found = sorted(set(m for m in model_hits if len(m) > 15))
 
                 result = {
                     "valid": token_match is not None,
@@ -229,11 +229,15 @@ class GeminiWebClient:
                 self._last_reload_error = msg
                 return
 
-            model_hits = re.findall(r"gemini-[a-zA-Z0-9.\-]+", body)
-            discovered = sorted(set(m for m in model_hits if len(m) > 10))
+            model_hits = re.findall(r"gemini-\d+\.\d+[a-zA-Z0-9.\-]+", body)
+            discovered = sorted(set(m for m in model_hits if len(m) > 15))
             if discovered:
+                whitelist = settings.model_whitelist.strip()
+                if whitelist:
+                    allowed = [m.strip() for m in whitelist.split(",") if m.strip()]
+                    discovered = [m for m in discovered if m in allowed]
                 self._available_models = discovered
-                logger.info(f"Discovered {len(discovered)} models")
+                logger.info(f"Discovered {len(discovered)} models: {discovered[:5]}")
         except Exception as e:
             msg = f"Token extraction failed: {e}"
             logger.error(msg)

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     usage_stats_enabled: bool = True
     usage_stats_interval: int = 300
     usage_stats_retention_days: int = 30
+    model_whitelist: str = ""
 
     @field_validator("gemini_psid")
     @classmethod

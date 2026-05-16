@@ -1,5 +1,5 @@
 /**
- * Usage Stats Chart - Pure SVG chart renderer
+ * Usage Stats Chart - Pure SVG chart renderer (responsive, Chinese UI)
  */
 
 import { apiCall } from './auth.js';
@@ -20,6 +20,7 @@ function initControls() {
             granBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentGranularity = btn.dataset.value;
+            applyRangeFilter();
             loadHistory();
         });
     });
@@ -29,7 +30,7 @@ function initControls() {
         btn.addEventListener('click', () => {
             timeBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            currentHours = parseInt(btn.dataset.value);
+            currentHours = btn.dataset.value === 'all' ? 'all' : parseInt(btn.dataset.value);
             loadHistory();
         });
     });
@@ -37,6 +38,33 @@ function initControls() {
     const refreshBtn = document.getElementById('us-refresh-btn');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', loadUsageStats);
+    }
+
+    applyRangeFilter();
+}
+
+function applyRangeFilter() {
+    const timeBtns = document.querySelectorAll('#us-timerange .btn');
+    timeBtns.forEach(btn => {
+        const val = btn.dataset.value;
+        const hours = val === 'all' ? Infinity : parseInt(val);
+        let hide = false;
+
+        if (currentGranularity === 'daily' && hours <= 24) hide = true;
+        if (currentGranularity === 'five_min' && hours > 24) hide = true;
+        if (currentGranularity === 'hourly' && hours < 6) hide = true;
+
+        btn.style.display = hide ? 'none' : '';
+    });
+
+    const activeBtn = document.querySelector('#us-timerange .btn.active');
+    if (activeBtn && activeBtn.style.display === 'none') {
+        const visible = document.querySelector('#us-timerange .btn:not([style*="none"])');
+        if (visible) {
+            document.querySelectorAll('#us-timerange .btn').forEach(b => b.classList.remove('active'));
+            visible.classList.add('active');
+            currentHours = visible.dataset.value === 'all' ? 'all' : parseInt(visible.dataset.value);
+        }
     }
 }
 
@@ -71,7 +99,19 @@ async function loadSummary() {
             rotEl.textContent = rate + '%';
         }
 
-        renderModelTable(data.model_requests || {});
+        let modelData = data.model_requests || {};
+        if (Object.keys(modelData).length === 0) {
+            try {
+                const status = await apiCall('GET', '/admin/status');
+                const accounts = status.accounts || [];
+                accounts.forEach(a => {
+                    if (a.models && Array.isArray(a.models)) {
+                        a.models.forEach(m => { modelData[m] = modelData[m] || 0; });
+                    }
+                });
+            } catch (ignored) {}
+        }
+        renderModelTable(modelData);
     } catch (e) {
         console.error('Load usage summary failed:', e);
     }
@@ -81,35 +121,39 @@ async function loadHistory() {
     const container = document.getElementById('us-chart-container');
     if (!container) return;
 
-    container.innerHTML = '<div class="chart-loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+    container.innerHTML = '<div class="chart-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
 
     try {
-        const url = '/admin/usage-stats/history?granularity=' + currentGranularity + '&hours=' + currentHours;
+        let url = '/admin/usage-stats/history?granularity=' + currentGranularity;
+        if (currentHours !== 'all') {
+            url += '&hours=' + currentHours;
+        }
         const data = await apiCall('GET', url);
         if (!data || data.length === 0) {
-            container.innerHTML = '<div class="empty-chart"><i class="fas fa-chart-bar"></i><p>No data yet</p></div>';
+            container.innerHTML = '<div class="empty-chart"><i class="fas fa-chart-bar"></i><p>暂无数据</p></div>';
             return;
         }
         renderChart(container, data);
     } catch (e) {
-        container.innerHTML = '<div class="empty-chart"><i class="fas fa-exclamation-circle"></i><p>Load failed</p></div>';
+        container.innerHTML = '<div class="empty-chart"><i class="fas fa-exclamation-circle"></i><p>加载失败</p></div>';
         console.error('Load usage history failed:', e);
     }
 }
 
 function renderChart(container, data) {
-    const W = 800, H = 280;
-    const pad = { top: 30, right: 60, bottom: 40, left: 50 };
+    const containerWidth = container.clientWidth || 800;
+    const W = Math.max(600, containerWidth);
+    const H = 320;
+    const pad = { top: 30, right: 60, bottom: 40, left: 55 };
     const cw = W - pad.left - pad.right;
     const ch = H - pad.top - pad.bottom;
 
     const maxReq = Math.max(...data.map(d => d.request_count), 1);
     const maxLat = Math.max(...data.map(d => d.avg_latency_ms), 1);
     const gap = cw / data.length;
-    const barW = Math.max(2, Math.min(20, gap * 0.7));
-    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">';
+    const barW = Math.max(2, Math.min(24, gap * 0.7));
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;min-height:320px;display:block">';
 
-    // Grid lines and left Y-axis
     for (let i = 0; i <= 4; i++) {
         const y = pad.top + ch - (ch * i / 4);
         const val = Math.round(maxReq * i / 4);
@@ -117,15 +161,13 @@ function renderChart(container, data) {
         svg += '<text x="' + (pad.left - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10" fill="#64748b">' + val + '</text>';
     }
 
-    // Bars (requests)
     data.forEach((d, i) => {
         const x = pad.left + i * gap + (gap - barW) / 2;
         const h = (d.request_count / maxReq) * ch;
         const y = pad.top + ch - h;
-        svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" fill="#3b82f6" opacity="0.7" rx="1"/>';
+        svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" fill="#059669" opacity="0.7" rx="2"/>';
     });
 
-    // Latency line
     let points = data.map((d, i) => {
         const x = pad.left + i * gap + gap / 2;
         const y = pad.top + ch - (d.avg_latency_ms / maxLat) * ch;
@@ -133,29 +175,30 @@ function renderChart(container, data) {
     }).join(' ');
     svg += '<polyline points="' + points + '" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round"/>';
 
-    // Right Y-axis labels (latency)
     for (let i = 0; i <= 4; i++) {
         const y = pad.top + ch - (ch * i / 4);
         const val = Math.round(maxLat * i / 4);
         svg += '<text x="' + (W - pad.right + 8) + '" y="' + (y + 4) + '" font-size="10" fill="#f59e0b">' + val + 'ms</text>';
     }
 
-    // X-axis labels
-    const step = Math.max(1, Math.floor(data.length / 6));
+    const step = Math.max(1, Math.floor(data.length / 8));
     data.forEach((d, i) => {
         if (i % step !== 0) return;
         const x = pad.left + i * gap + gap / 2;
         const t = new Date(d.timestamp);
         const hh = t.getHours().toString().padStart(2, '0');
         const mm = t.getMinutes().toString().padStart(2, '0');
-        svg += '<text x="' + x + '" y="' + (H - pad.bottom + 16) + '" text-anchor="middle" font-size="10" fill="#64748b">' + hh + ':' + mm + '</text>';
+        let label = hh + ':' + mm;
+        if (currentGranularity === 'daily' || currentHours === 'all' || (typeof currentHours === 'number' && currentHours > 48)) {
+            label = (t.getMonth() + 1) + '/' + t.getDate() + ' ' + hh + ':' + mm;
+        }
+        svg += '<text x="' + x + '" y="' + (H - pad.bottom + 16) + '" text-anchor="middle" font-size="10" fill="#64748b">' + label + '</text>';
     });
 
-    // Legend
-    svg += '<rect x="' + pad.left + '" y="8" width="10" height="10" fill="#3b82f6" opacity="0.7" rx="1"/>';
-    svg += '<text x="' + (pad.left + 14) + '" y="17" font-size="11" fill="#64748b">Requests</text>';
-    svg += '<line x1="' + (pad.left + 70) + '" y1="13" x2="' + (pad.left + 80) + '" y2="13" stroke="#f59e0b" stroke-width="2"/>';
-    svg += '<text x="' + (pad.left + 84) + '" y="17" font-size="11" fill="#64748b">Latency</text>';
+    svg += '<rect x="' + pad.left + '" y="8" width="10" height="10" fill="#059669" opacity="0.7" rx="2"/>';
+    svg += '<text x="' + (pad.left + 14) + '" y="17" font-size="11" fill="#64748b">请求数</text>';
+    svg += '<line x1="' + (pad.left + 60) + '" y1="13" x2="' + (pad.left + 72) + '" y2="13" stroke="#f59e0b" stroke-width="2"/>';
+    svg += '<text x="' + (pad.left + 76) + '" y="17" font-size="11" fill="#64748b">延迟</text>';
 
     svg += '</svg>';
     container.innerHTML = svg;
@@ -167,20 +210,20 @@ function renderModelTable(modelRequests) {
 
     const entries = Object.entries(modelRequests).sort((a, b) => b[1] - a[1]);
     if (entries.length === 0) {
-        container.innerHTML = '<div class="empty-chart"><i class="fas fa-cube"></i><p>No model data</p></div>';
+        container.innerHTML = '<div class="empty-chart"><i class="fas fa-cube"></i><p>暂无模型数据</p></div>';
         return;
     }
 
-    const maxCount = entries[0][1];
-    let html = '<table><thead><tr><th>Model</th><th>Requests</th><th>Share</th></tr></thead><tbody>';
+    const maxCount = Math.max(entries[0][1], 1);
     const total = entries.reduce((s, e) => s + e[1], 0);
+    let html = '<table><thead><tr><th>模型</th><th>请求数</th><th>占比</th></tr></thead><tbody>';
 
     entries.forEach(([model, count]) => {
-        const pct = ((count / total) * 100).toFixed(1);
-        const barPct = ((count / maxCount) * 100).toFixed(0);
+        const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+        const barPct = maxCount > 0 ? ((count / maxCount) * 100).toFixed(0) : '0';
         html += '<tr>';
         html += '<td>' + model + '</td>';
-        html += '<td>' + count + '</td>';
+        html += '<td>' + formatNumber(count) + '</td>';
         html += '<td><div style="display:flex;align-items:center;gap:0.5rem">';
         html += '<div class="model-bar-container"><div class="model-bar" style="width:' + barPct + '%"></div></div>';
         html += '<span style="font-size:0.8rem;white-space:nowrap">' + pct + '%</span>';

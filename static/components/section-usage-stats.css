@@ -39,13 +39,15 @@
 
 .chart-container {
     width: 100%;
-    min-height: 280px;
+    min-height: 320px;
     position: relative;
 }
 
 .chart-container svg {
     width: 100%;
-    height: 280px;
+    height: auto;
+    min-height: 320px;
+    display: block;
 }
 
 .chart-loading {
