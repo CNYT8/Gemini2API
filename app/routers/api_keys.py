@@ -150,15 +150,24 @@ async def batch_delete(req: BatchDeleteRequest, request: Request):
 
 @router.post("/models")
 async def fetch_models(req: FetchModelsRequest):
-    if req.provider != "custom":
-        raise HTTPException(status_code=400, detail="Only custom provider is supported")
+    base_url = req.base_url.rstrip('/')
+    headers = {"Authorization": f"Bearer {req.api_key}"}
+
+    if req.provider == "anthropic":
+        headers = {
+            "x-api-key": req.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+        url = f"{base_url}/models"
+    elif req.provider == "gemini":
+        url = f"{base_url}/models?key={req.api_key}"
+        headers = {}
+    else:
+        url = f"{base_url}/models"
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{req.base_url.rstrip('/')}/models",
-                headers={"Authorization": f"Bearer {req.api_key}"},
-            )
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(url, headers=headers)
             response.raise_for_status()
             data = response.json()
 
@@ -168,6 +177,13 @@ async def fetch_models(req: FetchModelsRequest):
                     models.append({
                         "id": model.get("id", ""),
                         "display_name": model.get("id", ""),
+                    })
+            elif "models" in data:
+                for model in data["models"]:
+                    name = model.get("name", "").replace("models/", "")
+                    models.append({
+                        "id": name,
+                        "display_name": model.get("displayName", name),
                     })
 
             return {"models": models}

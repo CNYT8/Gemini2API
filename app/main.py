@@ -25,7 +25,9 @@ from app.routers import logs as logs_router
 from app.routers import usage_stats as usage_stats_router
 from app.routers import settings as settings_router
 from app.routers import api_keys as api_keys_router
+from app.routers import model_mapping as model_mapping_router
 from app.core.api_key_store import ApiKeyPool
+from app.core.model_mapping import ModelMapping
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
@@ -49,6 +51,7 @@ async def lifespan(app: FastAPI):
 
     app.state.log_store = LogStore()
     app.state.api_key_pool = ApiKeyPool()
+    app.state.model_mapping = ModelMapping()
 
     version_task = None
     if settings.version_sync_enabled:
@@ -171,6 +174,7 @@ app.include_router(logs_router.router)
 app.include_router(usage_stats_router.router)
 app.include_router(settings_router.router)
 app.include_router(api_keys_router.router)
+app.include_router(model_mapping_router.router)
 
 
 @app.get("/health")

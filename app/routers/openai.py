@@ -38,11 +38,15 @@ async def list_models(request: Request):
 
 @router.post("/chat/completions")
 async def chat_completions(req: ChatRequest, request: Request):
+    # Resolve model name through model mapping
+    model_mapping = request.app.state.model_mapping
+    resolved_model = model_mapping.resolve(req.model)
+
     # Check if model should be forwarded to third-party provider
-    if req.model not in gemini_client.models:
+    if resolved_model not in gemini_client.models:
         pool = getattr(request.app.state, 'api_key_pool', None)
         if pool:
-            entry = pool.get_key_for_model(req.model)
+            entry = pool.get_key_for_model(resolved_model)
             if entry:
                 messages_raw = [m.model_dump() for m in req.messages]
                 result = await forward_to_provider(entry, messages_raw, req)
@@ -59,13 +63,13 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            _stream_response(prompt, req.model, has_tools),
+            _stream_response(prompt, resolved_model, has_tools),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     try:
-        result = await gemini_client.generate(prompt, req.model)
+        result = await gemini_client.generate(prompt, resolved_model)
     except (RuntimeError, ValueError) as e:
         return JSONResponse(
             status_code=500 if "retry" in str(e).lower() else 400,
@@ -91,7 +95,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                 })
             return ChatResponse(
                 id=completion_id,
-                model=req.model,
+                model=resolved_model,
                 choices=[Choice(
                     message=ChoiceMessage(role="assistant", tool_calls=tool_calls),
                     finish_reason="tool_calls",
@@ -106,7 +110,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     return ChatResponse(
         id=completion_id,
-        model=req.model,
+        model=resolved_model,
         choices=[Choice(
             message=ChoiceMessage(role="assistant", content=text),
             finish_reason="stop",

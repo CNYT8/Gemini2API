@@ -78,22 +78,19 @@ function handleProviderChange() {
     const customInput = document.getElementById('ak-custom-model');
     const fetchBtn = document.getElementById('ak-fetch-models-btn');
 
-    if (provider === 'custom') {
-        baseUrlInput.value = '';
-        baseUrlInput.disabled = false;
-        customInput.style.display = '';
-        fetchBtn.style.display = '';
-        modelsList.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem">输入模型名后回车添加，或点击"获取"自动加载</span>';
+    // All providers use the same flow: base_url + api_key -> fetch models
+    baseUrlInput.disabled = false;
+    customInput.style.display = '';
+    fetchBtn.style.display = '';
+
+    const info = catalogData[provider];
+    if (info && info.default_base_url) {
+        baseUrlInput.value = info.default_base_url;
     } else {
-        const info = catalogData[provider];
-        if (info) {
-            baseUrlInput.value = info.default_base_url || '';
-            baseUrlInput.disabled = true;
-            customInput.style.display = 'none';
-            fetchBtn.style.display = 'none';
-            renderModelCheckboxes(info.models || []);
-        }
+        baseUrlInput.value = '';
     }
+
+    modelsList.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem">点击"获取"加载模型列表，或手动输入模型名回车添加</span>';
 }
 
 function renderModelCheckboxes(models) {
@@ -155,19 +152,13 @@ async function handleAddKey() {
     if (!apiKey) { showToast('请填写 API Key', 'warning'); return; }
 
     let models = [];
-    if (provider === 'custom') {
-        const chips = document.querySelectorAll('#ak-models-list .ak-model-chip');
-        const checkboxes = document.querySelectorAll('#ak-models-list input[type="checkbox"]:checked');
-        chips.forEach(c => models.push(c.dataset.model));
-        checkboxes.forEach(c => models.push(c.value));
-        if (models.length === 0) {
-            const customVal = document.getElementById('ak-custom-model').value.trim();
-            if (customVal) models = [customVal];
-        }
-    } else {
-        document.querySelectorAll('#ak-models-list input[type="checkbox"]:checked').forEach(cb => {
-            models.push(cb.value);
-        });
+    const chips = document.querySelectorAll('#ak-models-list .ak-model-chip');
+    const checkboxes = document.querySelectorAll('#ak-models-list input[type="checkbox"]:checked');
+    chips.forEach(c => models.push(c.dataset.model));
+    checkboxes.forEach(c => models.push(c.value));
+    if (models.length === 0) {
+        const customVal = document.getElementById('ak-custom-model').value.trim();
+        if (customVal) models = [customVal];
     }
 
     if (models.length === 0) { showToast('请至少选择一个模型', 'warning'); return; }

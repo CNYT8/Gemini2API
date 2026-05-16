@@ -15,7 +15,6 @@ router = APIRouter(prefix="/admin/settings", tags=["Settings"])
 EDITABLE_FIELDS = {
     "refresh_interval",
     "max_retries",
-    "log_level",
     "rate_limit_enabled",
     "rate_limit_window",
     "rate_limit_max",
@@ -23,7 +22,6 @@ EDITABLE_FIELDS = {
     "health_check_interval",
     "rotation_strategy",
     "max_concurrent_per_account",
-    "model_whitelist",
     "usage_stats_enabled",
     "usage_stats_interval",
     "usage_stats_retention_days",
@@ -35,7 +33,6 @@ EDITABLE_FIELDS = {
 FIELD_TYPES = {
     "refresh_interval": int,
     "max_retries": int,
-    "log_level": str,
     "rate_limit_enabled": bool,
     "rate_limit_window": int,
     "rate_limit_max": int,
@@ -43,7 +40,6 @@ FIELD_TYPES = {
     "health_check_interval": int,
     "rotation_strategy": str,
     "max_concurrent_per_account": int,
-    "model_whitelist": str,
     "usage_stats_enabled": bool,
     "usage_stats_interval": int,
     "usage_stats_retention_days": int,
@@ -59,8 +55,6 @@ class SettingsResponse(BaseModel):
     health_check: Dict[str, Any] = Field(description="Health check configuration")
     account_management: Dict[str, Any] = Field(description="Account rotation settings")
     usage_stats: Dict[str, Any] = Field(description="Usage statistics settings")
-    models: Dict[str, Any] = Field(description="Model configuration")
-    logging: Dict[str, Any] = Field(description="Logging configuration")
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -101,12 +95,6 @@ def _get_grouped_settings() -> Dict[str, Dict[str, Any]]:
             "usage_stats_enabled": settings.usage_stats_enabled,
             "usage_stats_interval": settings.usage_stats_interval,
             "usage_stats_retention_days": settings.usage_stats_retention_days,
-        },
-        "models": {
-            "model_whitelist": settings.model_whitelist,
-        },
-        "logging": {
-            "log_level": settings.log_level,
         },
     }
 

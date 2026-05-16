@@ -103,3 +103,104 @@
     margin: -0.5rem 0 1.5rem 0;
     font-size: 0.9rem;
 }
+
+.radio-group {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.radio-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.radio-option:has(input:checked) {
+    border-color: var(--primary-color, #059669);
+    background: rgba(5, 150, 105, 0.05);
+}
+
+.radio-option input[type="radio"] {
+    accent-color: var(--primary-color, #059669);
+}
+
+.mapping-desc {
+    color: var(--text-secondary, #64748b);
+    font-size: 0.85rem;
+    margin: 0 0 1rem 0;
+}
+
+.mapping-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr 40px;
+    gap: 0.5rem;
+    padding: 0 0 0.5rem 0;
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary, #64748b);
+    text-transform: uppercase;
+}
+
+.mapping-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 40px;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+    align-items: center;
+}
+
+.mapping-row input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: var(--input-bg, #f8fafc);
+}
+
+.mapping-row input:focus {
+    outline: none;
+    border-color: var(--primary-color, #059669);
+}
+
+.mapping-row input[readonly] {
+    background: var(--bg-secondary, #f1f5f9);
+    color: var(--text-secondary, #64748b);
+}
+
+.btn-icon {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary, #64748b);
+    transition: background 0.2s, color 0.2s;
+}
+
+.btn-icon:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.btn-add-mapping:hover {
+    background: rgba(5, 150, 105, 0.1);
+    color: var(--primary-color, #059669);
+}
+
+.mapping-actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+}

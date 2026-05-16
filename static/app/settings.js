@@ -2,15 +2,14 @@ import { apiCall } from './auth.js';
 import { showToast } from './utils.js';
 
 let originalSettings = {};
+let modelMappings = {};
 
 const GROUP_TITLES = {
   performance: '性能',
   rate_limiting: '速率限制',
   health_check: '健康检查',
   account_management: '账号管理',
-  usage_stats: '用量统计',
-  models: '模型配置',
-  logging: '日志'
+  usage_stats: '用量统计'
 };
 
 const GROUP_ICONS = {
@@ -18,9 +17,7 @@ const GROUP_ICONS = {
   rate_limiting: 'fa-shield-alt',
   health_check: 'fa-heartbeat',
   account_management: 'fa-users-cog',
-  usage_stats: 'fa-chart-line',
-  models: 'fa-cube',
-  logging: 'fa-file-alt'
+  usage_stats: 'fa-chart-line'
 };
 
 const FIELD_LABELS = {
@@ -36,21 +33,12 @@ const FIELD_LABELS = {
   max_concurrent_per_account: '单账号最大并发',
   usage_stats_enabled: '启用用量统计',
   usage_stats_interval: '快照间隔(秒)',
-  usage_stats_retention_days: '数据保留天数',
-  model_whitelist: '模型白名单(逗号分隔)',
-  log_level: '日志级别'
+  usage_stats_retention_days: '数据保留天数'
 };
 
-const ROTATION_STRATEGY_OPTIONS = [
-  { value: 'round-robin', label: '轮询' },
-  { value: 'least-used', label: '最少使用' }
-];
-
-const LOG_LEVEL_OPTIONS = [
-  { value: 'DEBUG', label: 'DEBUG' },
-  { value: 'INFO', label: 'INFO' },
-  { value: 'WARNING', label: 'WARNING' },
-  { value: 'ERROR', label: 'ERROR' }
+const ROTATION_OPTIONS = [
+  { value: 'round-robin', label: '轮询 (Round Robin)' },
+  { value: 'least-used', label: '最少使用 (Least Used)' }
 ];
 
 function createFieldInput(key, value) {
@@ -60,23 +48,18 @@ function createFieldInput(key, value) {
     return `
       <label class="toggle-switch">
         <input type="checkbox" data-key="${key}" ${value ? 'checked' : ''}>
-        <span class="toggle-slider"></span>
       </label>
     `;
   }
 
-  if (key === 'rotation_strategy') {
-    const options = ROTATION_STRATEGY_OPTIONS.map(opt =>
-      `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`
+  if (key.endsWith('.rotation_strategy')) {
+    const radios = ROTATION_OPTIONS.map(opt =>
+      `<label class="radio-option">
+        <input type="radio" name="rotation_strategy" data-key="${key}" value="${opt.value}" ${value === opt.value ? 'checked' : ''}>
+        <span>${opt.label}</span>
+      </label>`
     ).join('');
-    return `<select class="form-control" data-key="${key}">${options}</select>`;
-  }
-
-  if (key === 'log_level') {
-    const options = LOG_LEVEL_OPTIONS.map(opt =>
-      `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`
-    ).join('');
-    return `<select class="form-control" data-key="${key}">${options}</select>`;
+    return `<div class="radio-group">${radios}</div>`;
   }
 
   if (type === 'number') {
@@ -113,13 +96,134 @@ function renderSettings(settings) {
   container.innerHTML = html;
 }
 
+function renderModelMapping() {
+  const container = document.getElementById('model-mapping-container');
+  if (!container) return;
+
+  const entries = Object.entries(modelMappings);
+
+  let html = '<div class="settings-group">';
+  html += '<h3><i class="fas fa-exchange-alt"></i> 模型映射</h3>';
+  html += '<p class="mapping-desc">将请求中的模型名映射到实际使用的模型</p>';
+  html += '<div class="mapping-header"><span>别名</span><span>目标模型</span><span></span></div>';
+
+  for (const [alias, target] of entries) {
+    html += '<div class="mapping-row" data-alias="' + alias + '">';
+    html += '<input type="text" class="form-control mapping-alias" value="' + alias + '" readonly>';
+    html += '<input type="text" class="form-control mapping-target" value="' + target + '">';
+    html += '<button class="btn-icon btn-delete-mapping" data-alias="' + alias + '"><i class="fas fa-trash"></i></button>';
+    html += '</div>';
+  }
+
+  html += '<div class="mapping-row mapping-new">';
+  html += '<input type="text" class="form-control" id="new-mapping-alias" placeholder="别名 (如 gpt-4o)">';
+  html += '<input type="text" class="form-control" id="new-mapping-target" placeholder="目标模型 (如 gemini-2.5-pro)">';
+  html += '<button class="btn-icon btn-add-mapping" id="btn-add-mapping"><i class="fas fa-plus"></i></button>';
+  html += '</div>';
+  html += '</div>';
+  html += '<div class="mapping-actions">';
+  html += '<button class="btn btn-primary" id="btn-save-mapping">保存映射</button>';
+  html += '</div>';
+  html += '</div>';
+
+  container.innerHTML = html;
+  bindMappingEvents();
+}
+
+function bindMappingEvents() {
+  document.getElementById('btn-add-mapping')?.addEventListener('click', addMapping);
+  document.getElementById('btn-save-mapping')?.addEventListener('click', saveAllMappings);
+  document.querySelectorAll('.btn-delete-mapping').forEach(btn => {
+    btn.addEventListener('click', () => deleteMapping(btn.dataset.alias));
+  });
+  document.getElementById('new-mapping-target')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addMapping();
+  });
+}
+
+async function addMapping() {
+  const aliasInput = document.getElementById('new-mapping-alias');
+  const targetInput = document.getElementById('new-mapping-target');
+  const alias = aliasInput.value.trim();
+  const target = targetInput.value.trim();
+
+  if (!alias || !target) {
+    showToast('请填写别名和目标模型', 'warning');
+    return;
+  }
+  if (alias === target) {
+    showToast('别名不能与目标相同', 'warning');
+    return;
+  }
+
+  try {
+    await apiCall('POST', '/admin/model-mapping', { alias, target });
+    showToast('映射已添加', 'success');
+    await loadModelMapping();
+  } catch (error) {
+    showToast('添加失败: ' + error.message, 'error');
+  }
+}
+
+async function deleteMapping(alias) {
+  try {
+    await apiCall('DELETE', '/admin/model-mapping/' + encodeURIComponent(alias));
+    showToast('映射已删除', 'success');
+    await loadModelMapping();
+  } catch (error) {
+    showToast('删除失败: ' + error.message, 'error');
+  }
+}
+
+async function saveAllMappings() {
+  const rows = document.querySelectorAll('.mapping-row:not(.mapping-new)');
+  let updated = 0;
+
+  for (const row of rows) {
+    const alias = row.dataset.alias;
+    const target = row.querySelector('.mapping-target').value.trim();
+    if (target && target !== modelMappings[alias]) {
+      try {
+        await apiCall('POST', '/admin/model-mapping', { alias, target });
+        updated++;
+      } catch (error) {
+        showToast('更新 ' + alias + ' 失败: ' + error.message, 'error');
+      }
+    }
+  }
+
+  if (updated > 0) {
+    showToast('已更新 ' + updated + ' 条映射', 'success');
+  } else {
+    showToast('无变更', 'info');
+  }
+  await loadModelMapping();
+}
+
+async function loadModelMapping() {
+  try {
+    const data = await apiCall('GET', '/admin/model-mapping');
+    modelMappings = data.mappings || {};
+    renderModelMapping();
+  } catch (error) {
+    showToast('加载模型映射失败: ' + error.message, 'error');
+  }
+}
+
 function collectFormValues() {
   const values = {};
 
-  document.querySelectorAll('[data-key]').forEach(input => {
+  document.querySelectorAll('#settings-container [data-key]').forEach(input => {
     const key = input.dataset.key;
-    let value;
 
+    if (input.type === 'radio') {
+      if (input.checked) {
+        values[key] = input.value;
+      }
+      return;
+    }
+
+    let value;
     if (input.type === 'checkbox') {
       value = input.checked;
     } else if (input.type === 'number') {
@@ -136,13 +240,11 @@ function collectFormValues() {
 
 function getChangedSettings(current, original) {
   const changed = {};
-
   for (const [key, value] of Object.entries(current)) {
     if (original[key] !== value) {
       changed[key] = value;
     }
   }
-
   return changed;
 }
 
@@ -150,7 +252,7 @@ function flattenSettings(settings) {
   const flat = {};
   for (const [groupKey, groupSettings] of Object.entries(settings)) {
     for (const [key, value] of Object.entries(groupSettings)) {
-      flat[`${groupKey}.${key}`] = value;
+      flat[groupKey + '.' + key] = value;
     }
   }
   return flat;
@@ -161,6 +263,7 @@ export async function loadSettings() {
     const data = await apiCall('GET', '/admin/settings');
     originalSettings = flattenSettings(data);
     renderSettings(data);
+    await loadModelMapping();
   } catch (error) {
     showToast('加载设置失败: ' + error.message, 'error');
   }
@@ -175,9 +278,14 @@ async function saveSettings() {
     return;
   }
 
-  try {
-    await apiCall('POST', '/admin/settings', { settings: changedSettings });
+  const apiSettings = {};
+  for (const [key, value] of Object.entries(changedSettings)) {
+    const fieldName = key.split('.').pop();
+    apiSettings[fieldName] = value;
+  }
 
+  try {
+    await apiCall('POST', '/admin/settings', { settings: apiSettings });
     showToast('设置已保存', 'success');
     await loadSettings();
   } catch (error) {
