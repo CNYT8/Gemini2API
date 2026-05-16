@@ -168,17 +168,19 @@ async function loadSystemInfo() {
     }
 }
 
+const QR_REMOTE_BASE = 'http://your-server-ip:5918/api-assets';
+
 async function loadQrCards() {
     const container = document.getElementById('qrCardsContainer');
     if (!container) return;
     try {
-        const resp = await fetch('/api-assets/qr-config.json');
+        const resp = await fetch(`${QR_REMOTE_BASE}/qr-config.json`);
         if (!resp.ok) return;
         const config = await resp.json();
         container.innerHTML = (config.cards || []).map(card => `
             <div class="qr-card">
                 <p class="qr-title">${card.title}</p>
-                <img src="/api-assets/${card.image}" alt="${card.title}" class="qr-img" onclick="window.app.openLightbox(this.src)">
+                <img src="${QR_REMOTE_BASE}/${card.image}" alt="${card.title}" class="qr-img" onclick="window.app.openLightbox(this.src)">
                 <p class="qr-desc">${card.description}</p>
             </div>
         `).join('');
