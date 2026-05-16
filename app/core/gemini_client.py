@@ -206,6 +206,7 @@ class GeminiWebClient:
                 msg = f"Gemini returned HTTP {resp.status_code}"
                 logger.error(msg)
                 self._last_reload_error = msg
+                self._session_token = ""
                 return
 
             body = resp.text
@@ -214,6 +215,7 @@ class GeminiWebClient:
                 self._session_token = token_match.group(1)
                 logger.info("Session token acquired")
             else:
+                self._session_token = ""
                 if "accounts.google.com" in body or "ServiceLogin" in body:
                     msg = "Cookie expired - redirected to Google login page"
                 elif len(body) < 1000:
@@ -233,6 +235,7 @@ class GeminiWebClient:
             msg = f"Token extraction failed: {e}"
             logger.error(msg)
             self._last_reload_error = msg
+            self._session_token = ""
 
     async def _rotate_cookies(self) -> bool:
         try:
@@ -240,6 +243,8 @@ class GeminiWebClient:
             await self._ensure_session_current()
             self._clear_session_cookies()
             cookies = self._get_cookies()
+            cookie_names = sorted(cookies.keys())
+            logger.debug(f"RotateCookies sending {len(cookies)} cookies: {cookie_names}")
             body = '[000,"-0000000000000000000"]'
             resp = await self._http.post(
                 ROTATE_COOKIES_URL,
@@ -261,29 +266,36 @@ class GeminiWebClient:
                 with self._lock:
                     self._psidts = new_ts
                 self._cookie_jar.set("__Secure-1PSIDTS", new_ts)
-                logger.info("PSIDTS rotated via set-cookie")
+                logger.info("PSIDTS rotated successfully")
                 return True
-            logger.debug("RotateCookies 200 but no new PSIDTS (session still valid)")
-            return True
+
+            resp_text = resp.text[:200] if resp.text else "(empty)"
+            logger.warning(f"RotateCookies 200 but no new PSIDTS. Response: {resp_text}")
+            return False
         except Exception as e:
             logger.error(f"Rotation failed: {e}")
             return False
 
     async def _auto_refresh_loop(self):
         interval = settings.refresh_interval * 60
+        consecutive_failures = 0
         while True:
             await asyncio.sleep(interval * random_delay_factor())
             try:
                 rotated = await self._rotate_cookies()
                 if not rotated:
-                    logger.warning("Rotation failed, re-fetching token directly")
+                    consecutive_failures += 1
+                    logger.warning(f"Rotation returned no new PSIDTS ({consecutive_failures}x)")
+                else:
+                    consecutive_failures = 0
+
                 await self._obtain_session_token()
                 if self._session_token:
                     self._healthy = True
-                    logger.info("Auto-refresh: session token refreshed")
+                    logger.info("Auto-refresh: token OK")
                 else:
                     self._healthy = False
-                    logger.error("Auto-refresh failed, client unhealthy")
+                    logger.error("Auto-refresh: token fetch failed, client unhealthy")
             except asyncio.CancelledError:
                 break
             except Exception as e:
