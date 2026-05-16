@@ -198,6 +198,12 @@ class AccountPool:
                 results.append({"account_id": account.id, "valid": False, "error": str(e)})
         return results
 
+    def set_strategy(self, strategy: str):
+        self._strategy = RotationStrategy(strategy)
+
+    def set_max_concurrent(self, value: int):
+        self._max_concurrent = value
+
     def get_status(self) -> dict:
         accounts_info = []
         for a in self._accounts:

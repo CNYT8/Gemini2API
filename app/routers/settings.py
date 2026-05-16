@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import settings
+from app.core.account_pool import account_pool
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,12 @@ def _update_in_memory_settings(updates: Dict[str, Any]) -> None:
         # Update using object.__setattr__ to bypass pydantic immutability
         object.__setattr__(settings, key, value)
         logger.info(f"Updated in-memory setting: {key}={value}")
+
+    # Propagate to AccountPool
+    if "rotation_strategy" in updates:
+        account_pool.set_strategy(updates["rotation_strategy"])
+    if "max_concurrent_per_account" in updates:
+        account_pool.set_max_concurrent(updates["max_concurrent_per_account"])
 
 
 @router.get("", response_model=SettingsResponse)

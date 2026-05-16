@@ -37,8 +37,8 @@ const FIELD_LABELS = {
 };
 
 const ROTATION_OPTIONS = [
-  { value: 'round-robin', label: '轮询 (Round Robin)' },
-  { value: 'least-used', label: '最少使用 (Least Used)' }
+  { value: 'round-robin', label: '轮询' },
+  { value: 'least-used', label: '最少使用' }
 ];
 
 function createFieldInput(key, value) {

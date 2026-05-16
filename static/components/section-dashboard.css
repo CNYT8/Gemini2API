@@ -80,6 +80,21 @@
     gap: 1rem;
 }
 
+.info-grid-3col {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.version-badge {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    background: var(--primary-10);
+    color: var(--primary-color);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+
 .info-item {
     display: flex;
     flex-direction: column;

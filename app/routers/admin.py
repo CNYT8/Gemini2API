@@ -1,4 +1,8 @@
 import logging
+import os
+import platform
+import sys
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -65,6 +69,26 @@ async def reload_cookies(req: ReloadCookiesRequest = None):
 @router.get("/status")
 async def admin_status():
     return account_pool.get_status()
+
+
+@router.get("/system-info")
+async def system_info():
+    import psutil
+    proc = psutil.Process(os.getpid())
+    mem = proc.memory_info()
+    total_mem = psutil.virtual_memory().total
+
+    return {
+        "version": "3.0.9",
+        "python_version": platform.python_version(),
+        "server_time": datetime.now().strftime("%Y/%m/%d %H:%M:%S"),
+        "os": f"{platform.system()} {platform.release()}",
+        "memory_usage": mem.rss // (1024 * 1024),
+        "memory_total": total_mem // (1024 * 1024),
+        "cpu_percent": psutil.cpu_percent(interval=0.1),
+        "pid": os.getpid(),
+        "run_mode": "Docker" if os.path.exists("/.dockerenv") else "直接运行",
+    }
 
 
 @router.get("/check-account")

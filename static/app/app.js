@@ -118,16 +118,35 @@ async function loadDashboard() {
         setText('stat-requests', formatNumber(totalRequests));
         setText('stat-models', formatNumber(modelsSet.size || accounts.reduce((s, a) => s + (a.models_count || 0), 0)));
 
-        setText('info-strategy', data.strategy || '-');
+        const strategyMap = { 'round-robin': '轮询', 'least-used': '最少使用' };
+        setText('info-strategy', strategyMap[data.strategy] || data.strategy);
         setText('info-concurrent', data.max_concurrent_per_account || '-');
-        setText('info-healthy', activeCount > 0 ? '正常' : '异常');
-        setText('info-python', '3.12');
+        setText('info-total-accounts', accounts.length);
+        setText('info-active-accounts', activeCount);
 
         renderAccountStatusGrid(accounts);
         renderModelsList(modelsSet);
         updatePlaygroundModels(modelsSet);
+        await loadSystemInfo();
     } catch (error) {
         console.error('加载仪表盘失败:', error);
+    }
+}
+
+async function loadSystemInfo() {
+    try {
+        const data = await apiCall('GET', '/admin/system-info');
+        setText('sys-version', 'v' + data.version);
+        setText('sys-ver-detail', 'v' + data.version);
+        setText('sys-python', data.python_version);
+        setText('sys-time', data.server_time);
+        setText('sys-os', data.os);
+        setText('sys-memory', data.memory_usage + ' MB / ' + data.memory_total + ' MB');
+        setText('sys-cpu', data.cpu_percent + '%');
+        setText('sys-mode', data.run_mode);
+        setText('sys-pid', data.pid);
+    } catch (error) {
+        console.error('加载系统信息失败:', error);
     }
 }
 
