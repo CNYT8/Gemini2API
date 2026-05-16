@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Changed
+- 日志面板 UI 优化：选中行样式改为绿色调，与侧边栏风格统一
+- 日志面板全面汉化：标题、筛选按钮、表头、搜索框、分页、详情面板
+- 方向徽章中文化：ingress → 入站，egress → 出站
+- 修复 CSS 语法错误（white-space、badge text-transform 截断）
+
 ## [0.7.0] - 2025-05-16
 
 ### Added

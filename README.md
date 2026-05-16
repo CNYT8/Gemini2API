@@ -48,6 +48,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2025-05-16 14:20:00 | 结构化实时日志系统 + 中文界面优化（表格、过滤、分页、JSON 详情） |
 | 2025-05-16 12:50:00 | 新增用量统计系统：时序快照持久化、Summary/History API、前端 SVG 图表面板 |
 | 2025-05-16 10:30:00 | 新增 batchexecute 心跳 RPC + Cookie 完整性增强（Set-Cookie 头解析） |
 | 2025-05-16 00:40:00 | 修复 curl_cffi 跨域 Cookie 累积冲突，Cookie 热更新恢复正常 |
@@ -104,7 +105,7 @@
 - 仪表盘：账号状态总览、可用模型列表、请求统计
 - 账号管理：添加/删除账号、单独更新 Cookie、健康检测
 - Playground：在线测试 API 请求
-- 实时日志：SSE 推送服务端日志，支持自动滚动
+- 实时日志：结构化表格展示，支持方向过滤、文本搜索、分页、JSON 详情面板
 - 深色/浅色主题切换，响应式移动端适配
 
 ### ⚡ 高性能架构
@@ -437,7 +438,11 @@ response = client.chat.completions.create(
 | GET | `/usage-stats/summary` | 用量统计概览（累计请求数、错误率、延迟、轮换成功率） |
 | GET | `/usage-stats/history` | 历史趋势数据（支持 granularity 和 hours 参数） |
 | GET | `/verify` | 验证 API Key 有效性（登录用） |
-| GET | `/logs/stream` | SSE 实时日志流 |
+| GET | `/logs` | 结构化日志分页查询（支持 direction/search/limit/offset） |
+| GET | `/logs/state` | 日志记录状态（enabled/paused） |
+| POST | `/logs/state` | 更新日志记录状态 |
+| POST | `/logs/clear` | 清空日志 |
+| GET | `/logs/{id}` | 单条日志详情 |
 
 ### 系统
 

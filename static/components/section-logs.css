@@ -14,10 +14,16 @@
     gap: 0.25rem;
 }
 
+.log-controls .btn-group .btn {
+    border-radius: var(--radius-lg, 8px);
+    transition: var(--transition, all 0.2s);
+}
+
 .log-controls .btn-group .btn.active {
-    background: var(--primary-color, #3b82f6);
-    color: #fff;
-    border-color: var(--primary-color, #3b82f6);
+    background: var(--primary-10, rgba(5, 150, 105, 0.1));
+    color: var(--primary-color, #059669);
+    border-color: var(--primary-color, #059669);
+    font-weight: 600;
 }
 
 .search-box {
@@ -40,15 +46,17 @@
     width: 100%;
     padding: 0.4rem 0.75rem 0.4rem 2rem;
     border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 6px;
+    border-radius: var(--radius-lg, 8px);
     font-size: 0.85rem;
     background: var(--card-bg, #fff);
     color: var(--text-primary, #1e293b);
+    transition: var(--transition, all 0.2s);
 }
 
 .search-box input:focus {
     outline: none;
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color, #059669);
+    box-shadow: 0 0 0 3px var(--primary-10, rgba(5, 150, 105, 0.1));
 }
 
 .log-actions {
@@ -70,7 +78,7 @@
     min-width: 0;
     overflow-x: auto;
     border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 8px;
+    border-radius: var(--radius-xl, 12px);
     background: var(--card-bg, #fff);
 }
 
@@ -83,74 +91,71 @@
 .logs-table thead th {
     position: sticky;
     top: 0;
-    background: var(--card-bg, #fff);
-    padding: 0.6rem 0.75rem;
+    background: var(--bg-tertiary, #f8fafc);
+    padding: 0.7rem 0.75rem;
     text-align: left;
     font-weight: 600;
     color: var(--text-secondary, #64748b);
-    border-bottom: 2px solid var(--border-color, #e2e8f0);
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
     white-space: nowrap;
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
 .logs-table tbody tr {
     cursor: pointer;
-    transition: background 0.15s;
+    transition: all 0.15s ease;
 }
 
 .logs-table tbody tr:hover {
-    background: var(--hover-bg, #f1f5f9);
+    background: var(--primary-10, rgba(5, 150, 105, 0.05));
 }
 
 .logs-table tbody tr.selected {
-    background: var(--primary-color, #3b82f6);
-    color: #fff;
-}
-
-.logs-table tbody tr.selected .badge,
-.logs-table tbody tr.selected .status-code {
-    color: #fff;
+    background: var(--primary-10, rgba(5, 150, 105, 0.1));
+    color: var(--primary-color, #059669);
 }
 
 .logs-table tbody td {
-    padding: 0.5rem 0.75rem;
+    padding: 0.6rem 0.75rem;
     border-bottom: 1px solid var(--border-color, #e2e8f0);
     white-space: nowrap;
 }
 
 .badge {
     display: inline-block;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.72rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-lg, 6px);
+    font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
 }
 
 .badge-ingress {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: rgba(37, 99, 235, 0.1);
+    color: #2563eb;
 }
 
 .badge-egress {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--primary-10, rgba(5, 150, 105, 0.1));
+    color: var(--primary-color, #059669);
 }
 
 .status-code {
     font-weight: 600;
+    font-size: 0.8rem;
 }
 
-.status-2xx { color: #16a34a; }
+.status-2xx { color: var(--success-color, #10b981); }
 .status-3xx { color: #2563eb; }
 .status-4xx { color: #ea580c; }
-.status-5xx { color: #dc2626; }
+.status-5xx { color: var(--danger-color, #ef4444); }
 
 .logs-detail {
     width: 350px;
     border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 8px;
+    border-radius: var(--radius-xl, 12px);
     background: var(--card-bg, #fff);
     display: none;
     flex-direction: column;
@@ -167,6 +172,7 @@
     justify-content: space-between;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--border-color, #e2e8f0);
+    background: var(--bg-tertiary, #f8fafc);
 }
 
 .detail-header h4 {

@@ -148,6 +148,7 @@ function renderTable(records) {
     tbody.innerHTML = records.map(r => {
         const t = new Date(r.ts);
         const time = t.toLocaleTimeString();
+        const dirLabel = r.direction === 'ingress' ? '入站' : '出站';
         const dirClass = 'badge-' + r.direction;
         const statusClass = getStatusClass(r.status);
         const latency = r.latency_ms ? Math.round(r.latency_ms) + 'ms' : '-';
@@ -155,7 +156,7 @@ function renderTable(records) {
 
         return '<tr class="log-row' + selected + '" data-id="' + r.id + '">'
             + '<td>' + time + '</td>'
-            + '<td><span class="badge ' + dirClass + '">' + r.direction + '</span></td>'
+            + '<td><span class="badge ' + dirClass + '">' + dirLabel + '</span></td>'
             + '<td>' + r.method + '</td>'
             + '<td>' + truncatePath(r.path) + '</td>'
             + '<td><span class="status-code ' + statusClass + '">' + (r.status || '-') + '</span></td>'
