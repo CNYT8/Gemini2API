@@ -48,6 +48,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2025-05-16 16:10:00 | 新增设置页面 + API Key 管理 + 统一转发引擎（支持 OpenAI/Anthropic/Gemini/OpenRouter/自定义） |
 | 2025-05-16 15:30:00 | 用量统计优化：图表撑满、时间范围扩展、模型白名单过滤、中文化 |
 | 2025-05-16 14:20:00 | 结构化实时日志系统 + 中文界面优化（表格、过滤、分页、JSON 详情） |
 | 2025-05-16 12:50:00 | 新增用量统计系统：时序快照持久化、Summary/History API、前端 SVG 图表面板 |
@@ -105,9 +106,18 @@
 - 中文可视化管理界面，API Key 登录认证
 - 仪表盘：账号状态总览、可用模型列表、请求统计
 - 账号管理：添加/删除账号、单独更新 Cookie、健康检测
+- **设置页面**：可视化管理运行时配置（性能、速率限制、健康检查、账号管理等），修改即时生效
+- **API Key 管理**：集中管理第三方大模型 API Key（OpenAI/Anthropic/Gemini/OpenRouter/自定义），支持导入导出
 - Playground：在线测试 API 请求
 - 实时日志：结构化表格展示，支持方向过滤、文本搜索、分页、JSON 详情面板
 - 深色/浅色主题切换，响应式移动端适配
+
+### 🔀 统一转发引擎
+
+- 请求模型不在 Gemini Web 可用列表时，自动从 API Key 池匹配并转发到对应 Provider
+- OpenAI 兼容格式直接转发（含流式），Anthropic 格式双向转换
+- `/openai/v1/models` 自动聚合 Gemini Web 模型 + API Key 池中的第三方模型
+- 一个接口、一个 Key 调用所有大模型
 
 ### ⚡ 高性能架构
 
@@ -438,6 +448,16 @@ response = client.chat.completions.create(
 | GET | `/health-history` | 最近健康检查记录 |
 | GET | `/usage-stats/summary` | 用量统计概览（累计请求数、错误率、延迟、轮换成功率） |
 | GET | `/usage-stats/history` | 历史趋势数据（支持 granularity 和 hours 参数） |
+| GET | `/settings` | 获取当前可编辑配置（分组返回） |
+| POST | `/settings` | 批量更新配置（写入 .env + 热更新内存） |
+| GET | `/api-keys` | API Key 列表（密钥脱敏） |
+| GET | `/api-keys/catalog` | Provider 目录（内置模型列表） |
+| POST | `/api-keys` | 添加 API Key |
+| DELETE | `/api-keys/{id}` | 删除 API Key |
+| PATCH | `/api-keys/{id}/status` | 切换 Key 状态（启用/禁用） |
+| POST | `/api-keys/import` | 批量导入 Key |
+| GET | `/api-keys/export` | 导出所有 Key（完整密钥） |
+| POST | `/api-keys/batch-delete` | 批量删除 |
 | GET | `/verify` | 验证 API Key 有效性（登录用） |
 | GET | `/logs` | 结构化日志分页查询（支持 direction/search/limit/offset） |
 | GET | `/logs/state` | 日志记录状态（enabled/paused） |
@@ -512,6 +532,7 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 | `USAGE_STATS_ENABLED` | ❌ | `true` | 启用用量统计（时序快照 + 持久化） |
 | `USAGE_STATS_INTERVAL` | ❌ | `300` | 快照采集间隔（秒） |
 | `USAGE_STATS_RETENTION_DAYS` | ❌ | `30` | 历史数据保留天数 |
+| `MODEL_WHITELIST` | ❌ | — | 模型白名单（逗号分隔，为空则不过滤） |
 
 ---
 
@@ -540,6 +561,8 @@ gemini2api/
 │   │   ├── gemini_client.py    # Gemini Web 核心客户端
 │   │   ├── account_pool.py     # 多账号池（负载均衡）
 │   │   ├── auth.py             # API Key 验证
+│   │   ├── api_key_store.py    # 第三方 API Key 存储池
+│   │   ├── api_forwarder.py    # 统一转发引擎
 │   │   ├── stream.py           # 流式工具函数
 │   │   └── fingerprint/        # 反检测与协议伪装
 │   │       ├── config.py       # 指纹配置管理（加载/保存/热更新）
@@ -556,12 +579,16 @@ gemini2api/
 │   │   ├── claude.py
 │   │   ├── gemini.py
 │   │   ├── research.py
-│   │   └── admin.py
+│   │   ├── admin.py
+│   │   ├── settings.py         # 设置管理 API
+│   │   └── api_keys.py         # API Key 管理 API
 │   └── utils/                  # 工具函数
 │       ├── tools.py            # 函数调用桥接
 │       └── prompt.py           # 消息格式化
 ├── data/                       # 持久化数据（Docker 卷挂载）
 │   ├── fingerprint.json        # 指纹配置（自动生成）
+│   ├── api-keys.json           # 第三方 API Key 存储
+│   ├── usage-stats.json        # 用量统计快照
 │   └── cookies/                # Cookie 持久化存储
 ├── static/                     # Web 管理面板
 │   ├── index.html              # 主页面（SPA）
@@ -589,6 +616,9 @@ gemini2api/
 - [x] 多账号轮询（负载均衡）
 - [x] Web 管理面板
 - [x] 反检测与协议伪装（TLS 指纹一致性、Cookie 持久化、版本自动同步）
+- [x] 设置页面（可视化配置管理）
+- [x] API Key 管理（第三方大模型 Key 集中管理）
+- [x] 统一转发引擎（一个接口调用所有大模型）
 - [ ] 对话上下文持久化
 - [ ] 图片/文件上传支持
 - [ ] Prometheus 监控指标
