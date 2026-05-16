@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2025-05-16
+
+### Added
+- 结构化实时日志系统，替代旧的纯文本 SSE 流
+- LogStore 环形缓冲区（2000 条），支持分页、方向过滤、文本搜索
+- HTTP 请求捕获中间件，自动记录方法、路径、状态码、延迟、模型
+- `GET /admin/logs` 分页查询接口，支持 direction/search 参数
+- `GET /admin/logs/state` 和 `POST /admin/logs/state` 日志状态管理
+- `POST /admin/logs/clear` 清空日志
+- `GET /admin/logs/{id}` 单条记录详情
+- 前端表格式日志面板：方向徽章、状态码着色、延迟显示、JSON 详情面板
+- 前端 REST 轮询（1.5s 间隔）+ 暂停/恢复控制
+
+### Removed
+- 移除旧的 BufferLogHandler 和 `/admin/logs/stream` SSE 端点
+- 移除前端 EventSource 日志流
+
 ## [0.6.0] - 2025-05-16
 
 ### Added

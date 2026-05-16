@@ -18,8 +18,10 @@ from app.core.auth import verify_api_key
 from app.core.fingerprint.version_sync import version_sync_loop
 from app.core.usage_stats import UsageStatsStore
 from app.core.usage_timer import snapshot_loop
+from app.core.log_store import LogStore, create_log_record
 from app.routers import openai, claude, gemini, research
 from app.routers import admin
+from app.routers import logs as logs_router
 from app.routers import usage_stats as usage_stats_router
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -41,6 +43,9 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     logger.info(f"API Key: {settings.api_key}")
     await account_pool.initialize()
+
+    app.state.log_store = LogStore()
+
     version_task = None
     if settings.version_sync_enabled:
         version_task = asyncio.create_task(version_sync_loop())
@@ -99,11 +104,66 @@ if settings.rate_limit_enabled:
             content={"error": {"message": "Rate limit exceeded", "type": "rate_limit"}},
         )
 
+
+SKIP_LOG_PREFIXES = ("/static/", "/favicon.ico", "/admin/logs")
+
+
+@app.middleware("http")
+async def log_capture_middleware(request: Request, call_next):
+    path = request.url.path
+    if any(path.startswith(p) for p in SKIP_LOG_PREFIXES):
+        return await call_next(request)
+
+    import time
+    start = time.perf_counter()
+    response = await call_next(request)
+    latency_ms = (time.perf_counter() - start) * 1000
+
+    method = request.method
+    status = response.status_code
+
+    is_api = path.startswith(("/openai/", "/claude/", "/gemini/", "/v1/", "/v1beta/"))
+    if not is_api and not path.startswith("/admin/"):
+        return response
+
+    direction = "egress" if path.startswith(("/v1beta/", "/gemini/")) else "ingress"
+
+    model = None
+    stream = None
+    if hasattr(request.state, "_body_cache"):
+        import json
+        try:
+            body = json.loads(request.state._body_cache)
+            model = body.get("model")
+            stream = body.get("stream")
+        except Exception:
+            pass
+
+    error_msg = None
+    if status >= 400:
+        error_msg = f"HTTP {status}"
+
+    log_store = request.app.state.log_store
+    record = create_log_record(
+        method=method,
+        path=path,
+        direction=direction,
+        model=model,
+        status=status,
+        latency_ms=latency_ms,
+        stream=stream,
+        error=error_msg,
+    )
+    log_store.add(record)
+
+    return response
+
 app.include_router(openai.router)
 app.include_router(claude.router)
 app.include_router(gemini.router)
 app.include_router(research.router)
 app.include_router(admin.router)
+app.include_router(logs_router.router)
 app.include_router(usage_stats_router.router)
 
 

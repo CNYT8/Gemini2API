@@ -7,6 +7,7 @@ import { initThemeSwitcher } from './theme-switcher.js';
 import { initAuth, apiCall, logout } from './auth.js';
 import { showToast, formatNumber, getStatusBadge, maskString, copyToClipboard } from './utils.js';
 import { initUsageStats, loadUsageStats } from './usage-chart.js';
+import { initLogs } from './logs.js';
 
 let isAppInitialized = false;
 
@@ -77,6 +78,8 @@ async function loadSectionData(sectionId) {
                 break;
             case 'usage-stats':
                 await loadUsageStats();
+                break;
+            case 'logs':
                 break;
         }
     } catch (error) {
@@ -512,78 +515,8 @@ function clearPlayground() {
 }
 
 // ============================================================================
-// Logs
-// ============================================================================
-
-let logEventSource = null;
-
-function initLogStream() {
-    if (logEventSource) {
-        logEventSource.close();
-    }
-
-    const token = localStorage.getItem('gemini2api_token');
-    const url = `/admin/logs/stream?token=${encodeURIComponent(token)}`;
-
-    logEventSource = new EventSource(url);
-
-    logEventSource.onopen = () => {
-        const container = document.getElementById('logsContainer');
-        if (container && container.querySelector('.logs-placeholder')) {
-            container.innerHTML = '';
-        }
-    };
-
-    logEventSource.onmessage = (event) => {
-        const container = document.getElementById('logsContainer');
-        if (!container) return;
-
-        if (container.querySelector('.logs-placeholder')) {
-            container.innerHTML = '';
-        }
-
-        const line = document.createElement('div');
-        line.className = 'log-line';
-        line.textContent = event.data;
-
-        if (event.data.includes('[ERROR]')) {
-            line.classList.add('log-error');
-        } else if (event.data.includes('[WARNING]')) {
-            line.classList.add('log-warning');
-        }
-
-        container.appendChild(line);
-
-        while (container.children.length > 500) {
-            container.removeChild(container.firstChild);
-        }
-
-        const autoScroll = document.getElementById('autoScrollLogs');
-        if (autoScroll && autoScroll.checked) {
-            container.scrollTop = container.scrollHeight;
-        }
-    };
-
-    logEventSource.onerror = () => {
-        setTimeout(() => {
-            if (logEventSource) {
-                logEventSource.close();
-                initLogStream();
-            }
-        }, 3000);
-    };
-}
-
-function clearLogs() {
-    const container = document.getElementById('logsContainer');
-    if (container) {
-        container.innerHTML = '<div class="logs-placeholder"><i class="fas fa-file-alt"></i><p>日志已清空</p></div>';
-    }
-}
-
-// ============================================================================
 // Utilities
-// ============================================================================
+// ====================================================================================
 
 function setText(id, text) {
     const el = document.getElementById(id);
@@ -661,12 +594,6 @@ function initEventListeners() {
         pgClear.addEventListener('click', clearPlayground);
     }
 
-    // Clear logs
-    const clearLogsBtn = document.getElementById('clearLogsBtn');
-    if (clearLogsBtn) {
-        clearLogsBtn.addEventListener('click', clearLogs);
-    }
-
     // Logout
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
@@ -703,7 +630,7 @@ async function initApp() {
     initThemeSwitcher();
     initNavigation();
     initEventListeners();
-    initLogStream();
+    initLogs();
     initUsageStats();
 
     console.log('Gemini2API 管理控制台已加载');
@@ -719,7 +646,6 @@ window.app = {
     closeUpdateCookieModal,
     sendPlaygroundRequest,
     clearPlayground,
-    clearLogs,
     copyModel
 };
 

@@ -1,30 +1,14 @@
-import asyncio
 import logging
-from collections import deque
 from typing import Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.core.account_pool import account_pool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
-
-# 内存日志缓冲区
-log_buffer = deque(maxlen=200)
-
-
-class BufferLogHandler(logging.Handler):
-    def emit(self, record):
-        entry = self.format(record)
-        log_buffer.append(entry)
-
-
-_buffer_handler = BufferLogHandler()
-_buffer_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-logging.getLogger().addHandler(_buffer_handler)
 
 
 class ReloadCookiesRequest(BaseModel):
@@ -182,27 +166,3 @@ async def update_account_cookies(account_id: str, req: UpdateCookiesRequest):
 @router.get("/verify")
 async def verify_token():
     return {"status": "ok"}
-
-
-@router.get("/logs/stream")
-async def stream_logs(request: Request):
-    async def event_generator():
-        last_idx = len(log_buffer)
-        for entry in list(log_buffer):
-            yield f"data: {entry}\n\n"
-        while True:
-            if await request.is_disconnected():
-                break
-            current = list(log_buffer)
-            current_len = len(current)
-            if current_len > last_idx:
-                for entry in current[last_idx:]:
-                    yield f"data: {entry}\n\n"
-            last_idx = current_len
-            await asyncio.sleep(1)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
