@@ -53,6 +53,13 @@ async def lifespan(app: FastAPI):
     app.state.api_key_pool = ApiKeyPool()
     app.state.model_mapping = ModelMapping()
 
+    async def log_flush_loop():
+        while True:
+            await asyncio.sleep(10)
+            app.state.log_store.flush()
+
+    log_flush_task = asyncio.create_task(log_flush_loop())
+
     version_task = None
     if settings.version_sync_enabled:
         version_task = asyncio.create_task(version_sync_loop())
@@ -70,6 +77,12 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down...")
+    log_flush_task.cancel()
+    try:
+        await log_flush_task
+    except asyncio.CancelledError:
+        pass
+    app.state.log_store.flush()
     if snapshot_task:
         snapshot_task.cancel()
         try:

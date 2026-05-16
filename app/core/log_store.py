@@ -1,9 +1,11 @@
-"""Structured log store with circular buffer, filtering, and pagination."""
+"""Structured log store with circular buffer, filtering, pagination, and persistence."""
 
+import json
 import uuid
 from collections import deque
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import Lock
 from typing import Optional
 
@@ -48,11 +50,40 @@ class LogState:
 
 
 class LogStore:
-    def __init__(self, capacity: int = 2000):
+    def __init__(self, capacity: int = 2000, persist_path: str = "data/logs.json"):
         self._buffer: deque[LogRecord] = deque(maxlen=capacity)
         self._lock = Lock()
         self._state = LogState()
         self._id_index: dict[str, LogRecord] = {}
+        self._persist_path = Path(persist_path)
+        self._dirty = False
+        self._load()
+
+    def _load(self) -> None:
+        if not self._persist_path.exists():
+            return
+        try:
+            raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            for item in raw:
+                record = LogRecord(**item)
+                self._buffer.append(record)
+                self._id_index[record.id] = record
+        except Exception:
+            pass
+
+    def flush(self) -> None:
+        if not self._dirty:
+            return
+        with self._lock:
+            data = [r.to_dict() for r in self._buffer]
+        try:
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            self._persist_path.write_text(
+                json.dumps(data, ensure_ascii=False), encoding="utf-8"
+            )
+            self._dirty = False
+        except Exception:
+            pass
 
     @property
     def state(self) -> LogState:
@@ -67,6 +98,7 @@ class LogStore:
                 self._id_index.pop(evicted.id, None)
             self._buffer.append(record)
             self._id_index[record.id] = record
+        self._dirty = True
 
     def query(
         self,
@@ -104,6 +136,8 @@ class LogStore:
         with self._lock:
             self._buffer.clear()
             self._id_index.clear()
+        self._dirty = True
+        self.flush()
 
     def get_state(self) -> dict:
         return {"enabled": self._state.enabled, "paused": self._state.paused}
