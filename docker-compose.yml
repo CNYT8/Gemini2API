@@ -19,3 +19,21 @@ services:
       retries: 3
       start_period: 15s
     restart: unless-stopped
+
+  refresher:
+    build: ./refresher
+    container_name: gemini-refresher
+    profiles:
+      - refresher
+    env_file:
+      - .env
+    environment:
+      - GEMINI2API_URL=http://gemini2api:5918
+      - REFRESH_INTERVAL_SECONDS=480
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      gemini2api:
+        condition: service_healthy
+    restart: unless-stopped

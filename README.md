@@ -48,6 +48,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2025-05-17 06:00:00 | 新增 Playwright Cookie 自动续期模块（refresher），支持多账号轮询刷新，无缝对接 gemini2api 热更新 |
 | 2025-05-17 02:00:00 | 多语言覆盖全部页面（仪表盘/账号/日志/测试/统计/API/设置），修复 MutationObserver 无限循环导致页面卡死 |
 | 2025-05-17 01:00:00 | 新增多语言切换（简体中文/繁體中文/English/日本語/한국어），确认弹窗美化为自定义 Modal |
 | 2025-05-16 19:00:00 | 新增服务重启按钮（右上角控制栏），支持一键重启服务 |
@@ -57,7 +58,6 @@
 | 2025-05-16 16:10:00 | 新增设置页面 + API Key 管理 + 统一转发引擎（支持 OpenAI/Anthropic/Gemini/OpenRouter/自定义） |
 | 2025-05-16 15:30:00 | 用量统计优化：图表撑满、时间范围扩展、模型白名单过滤、中文化 |
 | 2025-05-16 14:20:00 | 结构化实时日志系统 + 中文界面优化（表格、过滤、分页、JSON 详情） |
-| 2025-05-16 12:50:00 | 新增用量统计系统：时序快照持久化、Summary/History API、前端 SVG 图表面板 |
 
 ---
 
@@ -275,6 +275,21 @@ docker compose logs -f
 
 > [!TIP]
 > 不创建 `accounts.json` 时，服务自动使用 `.env` 中的单账号模式。也可以通过 `POST /admin/accounts` API 在运行时动态添加账号。
+
+### Cookie 自动续期（可选）
+
+Gemini 的 `__Secure-1PSIDTS` Cookie 约 10 分钟过期。启用 refresher 模块后，Playwright 会定时用真实浏览器访问 Gemini 页面触发自动续期，并通知 gemini2api 热更新，实现 Cookie 永不过期。
+
+```bash
+# 启动主服务 + Cookie 自动续期
+docker compose --profile refresher up -d
+
+# 查看 refresher 日志
+docker logs gemini-refresher -f
+```
+
+> [!NOTE]
+> refresher 使用 Chromium 无头浏览器，首次构建镜像约 1.5GB。运行时每 8 分钟启动浏览器刷新一次，峰值内存约 400-600MB，建议服务器至少 2GB 内存 + 2GB SWAP。
 
 ### 3. 验证
 

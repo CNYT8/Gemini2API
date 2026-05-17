@@ -7,6 +7,11 @@
 ## [Unreleased]
 
 ### Added
+- Playwright Cookie 自动续期模块（`refresher/`），真实 Chromium 浏览器定时刷新 Cookie
+- 支持多账号串行刷新，每个账号独立浏览器状态隔离
+- 刷新完成后自动调用 gemini2api `/admin/reload-cookies` 热更新，零手动操作
+- docker-compose profile 支持：`--profile refresher` 可选启用
+- 极限 Chromium 优化参数（单进程/禁GPU/禁扩展），降低内存占用
 - 多语言切换系统（简体中文/繁體中文/English/日本語/한국어），语言偏好 localStorage 持久化
 - 语言切换器组件（右上角下拉菜单），MutationObserver 自动翻译动态元素
 - 全部页面组件 data-i18n 国际化标记（仪表盘/账号管理/日志/模型测试/使用统计/API管理/设置）
