@@ -138,6 +138,7 @@ class BrowserPool:
         logger.info(f"[{account_id}] Context created, healthy={acc_ctx.healthy}")
 
     async def generate(self, prompt: str, model: str, account_id: str, conversation_id: str, model_headers: dict) -> dict:
+        await self._ensure_browser()
         acc = self.accounts.get(account_id)
         if not acc:
             if self.accounts:
@@ -203,11 +204,37 @@ class BrowserPool:
                 except Exception as e:
                     logger.error(f"[{acc_id}] Keepalive error: {e}")
 
+    async def _ensure_browser(self):
+        if not self.browser or not self.browser.is_connected():
+            logger.info("Browser closed or disconnected, restarting...")
+            try:
+                if self.browser:
+                    await self.browser.close()
+            except Exception:
+                pass
+            self.browser = await self._playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--single-process",
+                    "--no-zygote",
+                    "--disable-extensions",
+                    "--js-flags=--expose-gc",
+                ]
+            )
+            logger.info("Browser restarted")
+
     async def update_account_cookies(self, account_id: str, psid: str, psidts: str) -> bool:
         if account_id in self.accounts:
-            old_acc = self.accounts[account_id]
-            await old_acc.context.close()
+            try:
+                await self.accounts[account_id].context.close()
+            except Exception:
+                pass
             del self.accounts[account_id]
+        await self._ensure_browser()
         await self._create_account_context(account_id, psid, psidts)
         return self.accounts.get(account_id, None) is not None and self.accounts[account_id].healthy
 
