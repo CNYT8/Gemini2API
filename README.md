@@ -44,6 +44,12 @@
 > [!WARNING]
 > 本项目与 Google 无关。项目通过逆向工程获取的浏览器 Cookie 实现功能，可能不符合 Google 服务条款。使用风险自负，作者不对任何账号处罚或数据丢失承担责任。
 
+> [!TIP]
+> 建议搭配 Gemini Pro 及以上订阅使用，以获得更完整的模型访问权限和更稳定的体验。
+
+> [!IMPORTANT]
+> 由于 Google 风控策略限制，Cookie 会话目前约 2 小时后会被强制失效，暂未找到完美的长期保活方案。如果您在这方面有经验或思路，非常欢迎通过 [Issue](https://github.com/xwteam/gemini2api/issues) 或 PR 分享，期待社区的智慧。
+
 ---
 
 ## 📝 最近更新
@@ -66,6 +72,8 @@
 ---
 
 ## 🌟 核心功能
+
+> 📖 详细使用文档：[简体中文](docs/zh-CN/USAGE.md) | [繁體中文](docs/zh-TW/USAGE.md) | [English](docs/en/USAGE.md) | [日本語](docs/ja/USAGE.md) | [한국어](docs/ko/USAGE.md)
 
 ### 🔌 三合一协议兼容
 
@@ -191,6 +199,8 @@
 ---
 
 ## ⚡ 快速部署
+
+> 📖 详细部署文档：[简体中文](docs/zh-CN/DEPLOY.md) | [繁體中文](docs/zh-TW/DEPLOY.md) | [English](docs/en/DEPLOY.md) | [日本語](docs/ja/DEPLOY.md) | [한국어](docs/ko/DEPLOY.md)
 
 > **前置条件**：你需要一个能正常使用 Gemini 的 Google 账号。
 
@@ -408,6 +418,8 @@ response = client.chat.completions.create(
 ---
 
 ## 📡 API 端点
+
+> 📖 详细 API 文档：[简体中文](docs/zh-CN/API.md) | [繁體中文](docs/zh-TW/API.md) | [English](docs/en/API.md) | [日本語](docs/ja/API.md) | [한국어](docs/ko/API.md)
 
 <details>
 <summary><b>点击展开完整端点列表</b></summary>
