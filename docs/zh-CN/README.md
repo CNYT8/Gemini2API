@@ -26,7 +26,7 @@
 </p>
 
 <p>
-  📖 文档语言：<a href="docs/zh-CN/README.md">简体中文</a> | <a href="docs/zh-TW/README.md">繁體中文</a> | <a href="docs/en/README.md">English</a> | <a href="docs/ja/README.md">日本語</a> | <a href="docs/ko/README.md">한국어</a>
+  📖 文档语言：简体中文 | <a href="../zh-TW/README.md">繁體中文</a> | <a href="../en/README.md">English</a> | <a href="../ja/README.md">日本語</a> | <a href="../ko/README.md">한국어</a>
 </p>
 
 <br>
@@ -54,26 +54,19 @@
 
 ## 📝 最近更新
 
-> 完整更新日志请查看 [CHANGELOG.md](CHANGELOG.md)，以下内容由 CI 自动同步。
+> 完整更新日志请查看 [CHANGELOG.md](../../CHANGELOG.md)，以下内容由 CI 自动同步。
 
 | 日期 | 更新内容 |
 |------|----------|
 | 2025-05-17 23:20:00 | 模型列表统一为用户友好名称，新增思考模式（gemini-2.5-flash-thinking）和 Pro 模式，Playground 对话上下文修复 |
 | 2025-05-17 22:30:00 | 容器时区修正为 Asia/Shanghai，日志显示北京时间 |
 | 2025-05-17 17:00:00 | 模型选择修复（通过 x-goog-ext header 真正切换模型），支持 gemini-3 全系列 + 旧版别名兼容 |
-| 2025-05-17 15:30:00 | 对话上下文持久化（混合模式）：Gemini 原生 conversation_id 多轮续接 + 本地备份 + 自动 fallback |
-| 2025-05-17 09:00:00 | 新增多语言切换（简体中文/繁體中文/English/日本語/한국어），确认弹窗美化为自定义 Modal |
-| 2025-05-17 08:30:00 | 多语言覆盖全部页面（仪表盘/账号/日志/测试/统计/API/设置），修复 MutationObserver 无限循环 |
-| 2025-05-16 19:00:00 | 新增服务重启按钮（右上角控制栏），支持一键重启服务 |
-| 2025-05-16 18:40:00 | 日志持久化到 data/logs.json（重启不丢失）、每页15条；QR公告改为从 GitHub 仓库 api/ 目录远程获取，所有部署实例共享公告内容 |
-| 2025-05-16 18:00:00 | 仪表盘新增运行时间实时显示、二维码卡片（文字/图片从 api/ 目录动态加载，修改无需重建）、图片点击放大；版本号统一为 APP_VERSION 常量 |
-| 2025-05-16 17:30:00 | 轮换策略运行时生效、仪表盘系统信息改版（版本/Python/OS/内存/CPU/PID）、配置管理移入仪表盘、模型映射功能 |
 
 ---
 
 ## 🌟 核心功能
 
-> 📖 详细使用文档：[简体中文](docs/zh-CN/USAGE.md) | [繁體中文](docs/zh-TW/USAGE.md) | [English](docs/en/USAGE.md) | [日本語](docs/ja/USAGE.md) | [한국어](docs/ko/USAGE.md)
+> 📖 详细使用文档：[USAGE.md](USAGE.md)
 
 ### 🔌 三合一协议兼容
 
@@ -139,51 +132,6 @@
 
 ---
 
-## 🏗 技术架构
-
-```
-                           Gemini2API
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  Client (OpenAI SDK / Claude SDK / Gemini SDK / cURL)       │
-│       |                                                     │
-│  POST /openai/v1/chat/completions                           │
-│  POST /claude/v1/messages                                   │
-│  POST /gemini/v1beta/models/:m:generateContent              │
-│       |                                                     │
-│       v                                                     │
-│  +-----------+    +----------------+    +---------------+   │
-│  |  Routes   |--->|  Translation   |--->| Account Pool  |   │
-│  | (FastAPI) |    | Multi->Gemini  |    |  (负载均衡)   |   │
-│  +-----------+    +----------------+    +---------------+   │
-│                                               |             │
-│                                    ┌──────────┼────────┐    │
-│                                    v          v        v    │
-│                               Account-0  Account-1   ...   │
-│                                (Client)   (Client)          │
-│                                                             │
-│  +-----------+    +----------------+    +---------------+   │
-│  |   Auth    |    | Fingerprint    |    | Health Check  |   │
-│  |  API Key  |    | TLS+UA+Header  |    |  Scheduled    |   │
-│  +-----------+    +----------------+    +---------------+   │
-│                                                             │
-│  +-----------+    +----------------+    +---------------+   │
-│  |  Cookie   |    | Version Sync   |    |   Jitter      |   │
-│  | Persist   |    | Chrome Auto    |    | Human-like    |   │
-│  +-----------+    +----------------+    +---------------+   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-                           |
-              Fingerprint Layer (curl_cffi)
-          Chrome TLS + 动态 UA + 完整 Cookie
-                           |
-                           v
-                   gemini.google.com
-             /BardChatUi/StreamGenerate
-```
-
----
-
 ## 📋 系统要求
 
 | 依赖 | 版本 | 说明 |
@@ -200,7 +148,7 @@
 
 ## ⚡ 快速部署
 
-> 📖 详细部署文档：[简体中文](docs/zh-CN/DEPLOY.md) | [繁體中文](docs/zh-TW/DEPLOY.md) | [English](docs/en/DEPLOY.md) | [日本語](docs/ja/DEPLOY.md) | [한국어](docs/ko/DEPLOY.md)
+> 📖 详细部署文档：[DEPLOY.md](DEPLOY.md)
 
 > **前置条件**：你需要一个能正常使用 Gemini 的 Google 账号。
 
@@ -419,10 +367,7 @@ response = client.chat.completions.create(
 
 ## 📡 API 端点
 
-> 📖 详细 API 文档：[简体中文](docs/zh-CN/API.md) | [繁體中文](docs/zh-TW/API.md) | [English](docs/en/API.md) | [日本語](docs/ja/API.md) | [한국어](docs/ko/API.md)
-
-<details>
-<summary><b>点击展开完整端点列表</b></summary>
+> 📖 详细 API 文档：[API.md](API.md)
 
 ### OpenAI 兼容（`/openai/v1`）
 
@@ -448,88 +393,16 @@ response = client.chat.completions.create(
 | POST | `/models/{m}:generateContent` | 内容生成 |
 | POST | `/models/{m}:streamGenerateContent` | 流式生成（Chunked JSON） |
 
-### Deep Research（`/gemini/v1beta/deepresearch`）
-
-| 方法 | 端点 | 功能 |
-|------|------|------|
-| POST | `/` | 同步深度研究（规划->调研->综合报告） |
-| POST | `/stream` | 流式研究（实时进度推送） |
-| POST | `/interact` | 异步任务模式（创建->轮询结果） |
-
 ### 管理接口（`/admin`）
 
 | 方法 | 端点 | 功能 |
 |------|------|------|
 | GET | `/status` | 服务状态（账号池概览 + 轮询策略） |
-| GET | `/system-info` | 系统信息（版本/Python/OS/内存/CPU/PID/运行模式） |
 | GET | `/accounts` | 所有账号列表及状态 |
 | POST | `/accounts` | 动态添加新账号 |
 | DELETE | `/accounts/{id}` | 移除指定账号 |
 | GET | `/accounts/{id}/check` | 检测单个账号状态 |
-| GET | `/check-account` | 检测所有账号状态 |
 | POST | `/reload-cookies` | 热更新 Cookie（无需重启容器） |
-| PUT | `/accounts/{id}/cookies` | 更新指定账号的 Cookie |
-| GET | `/health-history` | 最近健康检查记录 |
-| GET | `/usage-stats/summary` | 用量统计概览（累计请求数、错误率、延迟、轮换成功率） |
-| GET | `/usage-stats/history` | 历史趋势数据（支持 granularity 和 hours 参数） |
-| GET | `/settings` | 获取当前可编辑配置（分组返回） |
-| POST | `/settings` | 批量更新配置（写入 .env + 热更新内存） |
-| GET | `/api-keys` | API Key 列表（密钥脱敏） |
-| GET | `/api-keys/catalog` | Provider 目录（内置模型列表） |
-| POST | `/api-keys` | 添加 API Key |
-| DELETE | `/api-keys/{id}` | 删除 API Key |
-| PATCH | `/api-keys/{id}/status` | 切换 Key 状态（启用/禁用） |
-| POST | `/api-keys/import` | 批量导入 Key |
-| GET | `/api-keys/export` | 导出所有 Key（完整密钥） |
-| POST | `/api-keys/batch-delete` | 批量删除 |
-| GET | `/verify` | 验证 API Key 有效性（登录用） |
-| GET | `/logs` | 结构化日志分页查询（支持 direction/search/limit/offset） |
-| GET | `/logs/state` | 日志记录状态（enabled/paused） |
-| POST | `/logs/state` | 更新日志记录状态 |
-| POST | `/logs/clear` | 清空日志 |
-| GET | `/logs/{id}` | 单条日志详情 |
-| GET | `/model-mapping` | 获取所有模型映射 |
-| POST | `/model-mapping` | 添加/更新模型映射 |
-| DELETE | `/model-mapping/{alias}` | 删除模型映射 |
-
-### 系统
-
-| 方法 | 端点 | 功能 |
-|------|------|------|
-| GET | `/health` | 健康检查（Docker 探针适配） |
-
-</details>
-
-**管理接口使用示例：**
-
-```bash
-# 查看账号池状态
-curl http://localhost:5918/admin/accounts \
-  -H "Authorization: Bearer sk-你的API密钥"
-
-# 动态添加新账号
-curl -X POST http://localhost:5918/admin/accounts \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-你的API密钥" \
-  -d '{"psid":"g.a000新的值","psidts":"sidts-新的值","label":"我的第二个账号"}'
-
-# 移除账号
-curl -X DELETE http://localhost:5918/admin/accounts/account-1 \"Authorization: Bearer sk-你的API密钥"
-
-# 检测单个账号状态
-curl http://localhost:5918/admin/accounts/account-0/check \
-  -H "Authorization: Bearer sk-你的API密钥"
-
-# 热更新 Cookie（更新第一个账号）
-curl -X POST http://localhost:5918/admin/reload-cookies \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-你的API密钥" \
-  -d '{"psid":"g.a000新的值","psidts":"sidts-新的值"}'
-
-# 从 .env 重新读取 Cookie
-curl -X POST http://localhost:5918/admin/reload-cookies \
-  -H "Authorization: Bearer sk-你的API密钥"
-```
 
 ---
 
@@ -549,17 +422,8 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 | `RATE_LIMIT_MAX` | ❌ | `10` | 窗口内最大请求数 |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | 启用定时账号状态检测 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
-| `ACCOUNTS_FILE` | ❌ | `accounts.json` | 多账号配置文件路径（不存在则使用环境变量单账号模式） |
 | `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `least-used`（最少使用） |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每账号最大并发请求数 |
-| `FINGERPRINT_CONFIG_PATH` | ❌ | `data/fingerprint.json` | 指纹配置文件路径 |
-| `VERSION_SYNC_ENABLED` | ❌ | `true` | 启用 Chrome 版本自动同步 |
-| `VERSION_SYNC_INTERVAL` | ❌ | `24` | 版本同步间隔（小时） |
-| `JITTER_ENABLED` | ❌ | `true` | 启用请求时间抖动（模拟人类行为） |
-| `USAGE_STATS_ENABLED` | ❌ | `true` | 启用用量统计（时序快照 + 持久化） |
-| `USAGE_STATS_INTERVAL` | ❌ | `300` | 快照采集间隔（秒） |
-| `USAGE_STATS_RETENTION_DAYS` | ❌ | `30` | 历史数据保留天数 |
-| `MODEL_WHITELIST` | ❌ | — | 模型白名单（逗号分隔，为空则不过滤） |
 
 ---
 
@@ -577,67 +441,6 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 
 ---
 
-## 🗂 项目结构
-
-```
-gemini2api/
-├── app/
-│   ├── main.py                 # 应用入口，中间件注册
-│   ├── config.py               # Pydantic 配置管理
-│   ├── core/
-│   │   ├── gemini_client.py    # Gemini Web 核心客户端
-│   │   ├── account_pool.py     # 多账号池（负载均衡 + 运行时策略切换）
-│   │   ├── auth.py             # API Key 验证
-│   │   ├── api_key_store.py    # 第三方 API Key 存储池
-│   │   ├── api_forwarder.py    # 统一转发引擎
-│   │   ├── model_mapping.py    # 模型名映射（别名→实际模型）
-│   │   ├── stream.py           # 流式工具函数
-│   │   └── fingerprint/        # 反检测与协议伪装
-│   │       ├── config.py       # 指纹配置管理（加载/保存/热更新）
-│   │       ├── header_builder.py # 动态请求头构建器
-│   │       ├── cookie_jar.py   # 完整 Cookie 持久化管理
-│   │       ├── version_sync.py # Chrome 版本自动同步
-│   │       └── jitter.py       # 请求时间抖动
-│   ├── models/                 # Pydantic 数据模型
-│   │   ├── openai.py
-│   │   ├── claude.py
-│   │   └── gemini.py
-│   ├── routers/                # API 路由（每种格式独立）
-│   │   ├── openai.py
-│   │   ├── claude.py
-│   │   ├── gemini.py
-│   │   ├── research.py
-│   │   ├── admin.py
-│   │   ├── settings.py         # 设置管理 API
-│   │   ├── api_keys.py         # API Key 管理 API
-│   │   └── model_mapping.py    # 模型映射 API
-│   └── utils/                  # 工具函数
-│       ├── tools.py            # 函数调用桥接
-│       └── prompt.py           # 消息格式化
-├── data/                       # 持久化数据（Docker 卷挂载）
-│   ├── fingerprint.json        # 指纹配置（自动生成）
-│   ├── api-keys.json           # 第三方 API Key 存储
-│   ├── model-mapping.json      # 模型名映射配置
-│   ├── usage-stats.json        # 用量统计快照
-│   └── cookies/                # Cookie 持久化存储
-├── api/                        # 热更新资源（Docker 卷挂载，修改无需重建）
-│   ├── qr-config.json          # 二维码卡片文字配置
-│   ├── wechat-qr.png           # 微信二维码图片
-│   └── sponsor-qr.png          # 赞助二维码图片
-├── static/                     # Web 管理面板
-│   ├── index.html              # 主页面（SPA）
-│   ├── login.html              # 登录页
-│   ├── app/                    # JS/CSS 核心模块
-│   └── components/             # HTML 组件片段
-├── Dockerfile                  # 多阶段构建
-├── docker-compose.yml          # 编排配置
-├── accounts.json.example       # 多账号配置示例
-├── requirements.txt
-└── .env.example
-```
-
----
-
 ## 🗺 开发路线
 
 - [x] OpenAI / Claude / Gemini 三格式兼容
@@ -649,14 +452,11 @@ gemini2api/
 - [x] 账号状态定时检测
 - [x] 多账号轮询（负载均衡）
 - [x] Web 管理面板
-- [x] 反检测与协议伪装（TLS 指纹一致性、Cookie 持久化、版本自动同步）
+- [x] 反检测与协议伪装
 - [x] 设置页面（可视化配置管理）
 - [x] API Key 管理（第三方大模型 Key 集中管理）
 - [x] 统一转发引擎（一个接口调用所有大模型）
-- [x] 模型映射（别名→实际模型名，如 gpt-4o → gemini-2.5-pro）
-- [x] 轮换策略运行时热更新（设置修改即时生效）
-- [x] 仪表盘系统信息面板（版本/Python/OS/内存/CPU/PID/运行模式）
-- [x] 对话上下文持久化
+- [x] 模型映射（别名→实际模型名）
 - [ ] 图片/文件上传支持
 - [ ] Prometheus 监控指标
 
@@ -673,40 +473,14 @@ gemini2api/
 
 ---
 
-## ⭐ Star History
-
-<a href="https://star-history.com/#xwteam/gemini2api&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=xwteam/gemini2api&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=xwteam/gemini2api&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=xwteam/gemini2api&type=Date" />
- </picture>
-</a>
-
----
-
 ## 📄 许可协议
 
-本项目采用 [非商业许可 (Non-Commercial)](LICENSE)：
+本项目采用 [非商业许可 (Non-Commercial)](../../LICENSE)：
 
 - **允许**：个人学习、研究、自用部署
 - **禁止**：任何形式的商业用途，包括但不限于出售、转售、收费代理、商业产品集成
 
 本项目与 Google 无关联。使用者需自行承担风险并遵守 Google 的服务条款。
-
----
-
-## ⚠ 免责声明
-
-1. **技术性质**：Gemini2API 是一个技术研究项目，通过浏览器 Cookie 模拟访问 Google Gemini Web 界面。本项目不提供任何 AI 服务，所有生成内容均来自 Google。使用本项目可能违反 Google 服务条款，由此产生的一切后果由使用者自行承担。
-
-2. **无担保声明**：本项目按"原样"提供，不作任何明示或暗示的保证，包括但不限于适销性、特定用途适用性。开发者不对因使用本项目导致的账号封禁、数据丢失或其他任何损失承担责任。
-
-3. **数据与隐私**：本项目完全在用户本地环境运行，不收集、不上传、不存储任何用户数据。您的 Cookie 和 API Key 仅保存在本地配置中，请妥善保管，切勿泄露。
-
-4. **合规责任**：使用者应确保其使用行为符合所在地区的法律法规。严禁将本项目用于任何违法违规活动。
-
-5. **第三方服务**：本项目与 Google 无任何关联或授权关系。Google Gemini 的可用性、稳定性及内容准确性均由 Google 负责，与本项目无关。
 
 ---
 
