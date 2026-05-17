@@ -2,7 +2,7 @@
 
 <h1>Gemini2API</h1>
 <h3>轻量级 Gemini Web 反向代理</h3>
-<p>一套代码兼容 OpenAI / Claude / Gemini 三大主流 AI SDK，纯异步架构，零官方 Key，30 秒 Docker 部署。</p>
+<p>一套代码兼容 OpenAI / Claude / Gemini 三大主流 AI SDK，纯异步架构，零官方 Key，Docker 快速部署。</p>
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.12+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
@@ -23,6 +23,10 @@
   <a href="#-配置说明">配置说明</a> &bull;
   <a href="#-注意事项">注意事项</a> &bull;
   <a href="#-开发路线">开发路线</a>
+</p>
+
+<p>
+  📖 文档语言：<a href="docs/zh-CN/">简体中文</a> | <a href="docs/zh-TW/">繁體中文</a> | <a href="docs/en/">English</a> | <a href="docs/ja/">日本語</a> | <a href="docs/ko/">한국어</a>
 </p>
 
 <br>
