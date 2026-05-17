@@ -345,12 +345,13 @@ class GeminiWebClient:
             except Exception as e:
                 logger.error(f"Refresh loop error: {e}")
 
-    def _encode_payload(self, prompt: str, model: str) -> str:
-        inner = json.dumps([[prompt], None, None, model])
+    def _encode_payload(self, prompt: str, model: str, conversation_id: str = "") -> str:
+        conv_param = conversation_id if conversation_id else None
+        inner = json.dumps([[prompt], None, conv_param, model])
         outer = json.dumps([None, inner])
         return outer
 
-    async def generate(self, prompt: str, model: str) -> dict:
+    async def generate(self, prompt: str, model: str, conversation_id: str = "") -> dict:
         if not self._healthy:
             raise RuntimeError("Client not ready")
 
@@ -363,7 +364,7 @@ class GeminiWebClient:
         last_err = None
         for attempt in range(settings.max_retries):
             try:
-                return await self._send_request(prompt, model)
+                return await self._send_request(prompt, model, conversation_id)
             except HTTPStatusError as e:
                 last_err = e
                 status = e.status_code
@@ -382,12 +383,12 @@ class GeminiWebClient:
 
         raise RuntimeError(f"Exhausted {settings.max_retries} retries: {last_err}")
 
-    async def _send_request(self, prompt: str, model: str) -> dict:
+    async def _send_request(self, prompt: str, model: str, conversation_id: str = "") -> dict:
         await apply_jitter("api_call")
         await self._ensure_session_current()
         self._clear_session_cookies()
 
-        encoded = self._encode_payload(prompt, model)
+        encoded = self._encode_payload(prompt, model, conversation_id)
         form_data = {"at": self._session_token, "f.req": encoded}
         cookies = self._get_cookies()
         headers = self._get_headers("POST", content_type="application/x-www-form-urlencoded")

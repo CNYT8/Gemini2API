@@ -15,6 +15,9 @@
 - docker-compose profile 支持：`--profile refresher` 可选启用
 - 极限 Chromium 优化参数（单进程/禁GPU/禁扩展），降低内存占用
 - `data/refresher_accounts.json` 多账号配置文件支持
+- 对话上下文持久化（混合模式）：优先 Gemini 原生 conversation_id 多轮续接，本地 `data/conversations/` 备份历史
+- 请求参数新增 `conversation_id` 字段，响应返回 `conversation_id` 供下次续接
+- Gemini 会话过期时自动 fallback 到完整 prompt 拼接模式，对客户端透明
 - 多语言切换系统（简体中文/繁體中文/English/日本語/한국어），语言偏好 localStorage 持久化
 - 语言切换器组件（右上角下拉菜单），MutationObserver 自动翻译动态元素
 - 全部页面组件 data-i18n 国际化标记（仪表盘/账号管理/日志/模型测试/使用统计/API管理/设置）

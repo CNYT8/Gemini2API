@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
     max_tokens: int | None = None
     tools: list[ToolDef] | None = None
     tool_choice: Any = None
+    conversation_id: str | None = None
 
 
 class ChoiceMessage(BaseModel):
@@ -57,6 +58,7 @@ class ChatResponse(BaseModel):
     model: str
     choices: list[Choice]
     usage: UsageInfo = Field(default_factory=UsageInfo)
+    conversation_id: str | None = None
 
 
 class StreamDelta(BaseModel):
