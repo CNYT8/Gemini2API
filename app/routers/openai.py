@@ -84,7 +84,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw),
+            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -145,7 +145,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                 })
             return ChatResponse(
                 id=completion_id,
-                model=resolved_model,
+                model=req.model,
                 choices=[Choice(
                     message=ChoiceMessage(role="assistant", tool_calls=tool_calls),
                     finish_reason="tool_calls",
@@ -161,7 +161,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     return ChatResponse(
         id=completion_id,
-        model=resolved_model,
+        model=req.model,
         choices=[Choice(
             message=ChoiceMessage(role="assistant", content=text),
             finish_reason="stop",
@@ -175,8 +175,9 @@ async def chat_completions(req: ChatRequest, request: Request):
     )
 
 
-async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None) -> AsyncGenerator[str, None]:
+async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "") -> AsyncGenerator[str, None]:
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+    model_name = display_model or model
 
     try:
         result = await gemini_client.generate(prompt, model, gemini_conv_id)
@@ -188,7 +189,7 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
             except Exception as e2:
                 error_chunk = StreamChunk(
                     id=completion_id,
-                    model=model,
+                    model=model_name,
                     choices=[StreamChoice(delta=StreamDelta(content=f"Error: {e2}"), finish_reason="stop")],
                 )
                 yield format_sse(error_chunk.model_dump())
@@ -197,7 +198,7 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
         else:
             error_chunk = StreamChunk(
                 id=completion_id,
-                model=model,
+                model=model_name,
                 choices=[StreamChoice(delta=StreamDelta(content=f"Error: {e}"), finish_reason="stop")],
             )
             yield format_sse(error_chunk.model_dump())
@@ -227,14 +228,14 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
                 }
                 chunk = StreamChunk(
                     id=completion_id,
-                    model=model,
+                    model=model_name,
                     choices=[StreamChoice(delta=StreamDelta(tool_calls=[tool_call_data]))],
                 )
                 yield format_sse(chunk.model_dump())
 
             final = StreamChunk(
                 id=completion_id,
-                model=model,
+                model=model_name,
                 choices=[StreamChoice(delta=StreamDelta(), finish_reason="tool_calls")],
             )
             yield format_sse(final.model_dump())
@@ -244,7 +245,7 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
 
     first = StreamChunk(
         id=completion_id,
-        model=model,
+        model=model_name,
         choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
     )
     yield format_sse(first.model_dump())
@@ -252,14 +253,14 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     async for word in split_into_chunks(text):
         chunk = StreamChunk(
             id=completion_id,
-            model=model,
+            model=model_name,
             choices=[StreamChoice(delta=StreamDelta(content=word))],
         )
         yield format_sse(chunk.model_dump())
 
     done_chunk = StreamChunk(
         id=completion_id,
-        model=model,
+        model=model_name,
         choices=[StreamChoice(delta=StreamDelta(), finish_reason="stop")],
     )
     yield format_sse(done_chunk.model_dump())

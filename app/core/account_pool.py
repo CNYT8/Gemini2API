@@ -216,8 +216,8 @@ class AccountPool:
                 "error_count": a.error_count,
                 "active_requests": a.active_requests,
                 "last_used": a.last_used.isoformat() if a.last_used else None,
-                "models": list(a.client.models) if a.client else [],
-                "models_count": len(a.client.models) if a.client else 0,
+                "models": self.models if a.client else [],
+                "models_count": len(self.models) if a.client else 0,
             })
         return {
             "total": self.total_count,
@@ -244,9 +244,8 @@ class AccountPool:
 
     @property
     def models(self) -> list[str]:
-        from app.core.gemini_client import KNOWN_MODELS, MODEL_ALIASES
-        all_models = list(KNOWN_MODELS) + list(MODEL_ALIASES.keys())
-        return sorted(set(all_models))
+        from app.core.gemini_client import MODEL_ALIASES
+        return sorted(MODEL_ALIASES.keys())
 
     @property
     def is_healthy(self) -> bool:

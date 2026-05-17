@@ -470,6 +470,9 @@ async function submitUpdateCookie() {
 // Playground
 // ============================================================================
 
+let _pgConversationId = '';
+let _pgMessages = [];
+
 async function sendPlaygroundRequest() {
     const message = document.getElementById('pg-message')?.value.trim();
     const model = document.getElementById('pg-model')?.value;
@@ -482,6 +485,8 @@ async function sendPlaygroundRequest() {
 
     const placeholder = chatContainer?.querySelector('.chat-placeholder');
     if (placeholder) placeholder.remove();
+
+    _pgMessages.push({ role: 'user', content: message });
 
     const userMsg = document.createElement('div');
     userMsg.className = 'chat-message user';
@@ -504,6 +509,15 @@ async function sendPlaygroundRequest() {
     document.getElementById('pg-message').value = '';
 
     const token = localStorage.getItem('gemini2api_token');
+    const reqBody = {
+        model: model || 'gemini-3-flash',
+        messages: [..._pgMessages],
+        stream: true
+    };
+    if (_pgConversationId) {
+        reqBody.conversation_id = _pgConversationId;
+    }
+
     try {
         const resp = await fetch('/openai/v1/chat/completions', {
             method: 'POST',
@@ -511,11 +525,7 @@ async function sendPlaygroundRequest() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({
-                model: model || 'gemini-2.5-flash-preview-05-20',
-                messages: [{ role: 'user', content: message }],
-                stream: true
-            })
+            body: JSON.stringify(reqBody)
         });
 
         if (!resp.ok) {
@@ -556,6 +566,8 @@ async function sendPlaygroundRequest() {
 
         if (!content) {
             aiBubble.textContent = '无响应内容';
+        } else {
+            _pgMessages.push({ role: 'assistant', content: content });
         }
     } catch (error) {
         aiBubble.innerHTML = `<span class="text-danger">错误: ${error.message}</span>`;
@@ -575,6 +587,8 @@ function clearPlayground() {
     }
     const message = document.getElementById('pg-message');
     if (message) message.value = '';
+    _pgConversationId = '';
+    _pgMessages = [];
 }
 
 // ============================================================================

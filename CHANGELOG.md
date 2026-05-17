@@ -9,6 +9,7 @@
 ### Added
 - 模型选择通过 `x-goog-ext-525001261-jspb` header 实现真正切换，支持 gemini-3 全系列
 - 旧版模型名别名兼容（gemini-2.5-pro → gemini-3-pro-plus 等）
+- 新增思考模式：`gemini-2.5-flash-thinking`、`gemini-2.0-flash-thinking`
 - 对话上下文持久化（混合模式）：优先 Gemini 原生 conversation_id 多轮续接，本地 `data/conversations/` 备份历史
 - 请求参数新增 `conversation_id` 字段，响应返回 `conversation_id` 供下次续接
 - 容器时区设置为 Asia/Shanghai，日志显示北京时间
@@ -21,8 +22,11 @@
 - 模型测试 textarea 添加快捷键提示（Enter 发送，Shift+Enter 换行）
 
 ### Fixed
+- 模型列表统一为用户友好名称（gemini-2.5-xxx），不再暴露内部 gemini-3 名称
+- 响应中 model 字段返回用户请求的原始模型名
+- Playground 模型下拉框从统一别名列表加载，不再使用页面缓存的旧模型名
+- Playground 对话支持上下文（累积消息历史），点击"新对话"清空
 - 修复 MutationObserver 无限循环导致页面卡死（textContent 变更触发 addedNodes 回调）
-- 模型发现改进：严格正则过滤 + 磁盘缓存，Cookie 正常时缓存真实可用模型
 - 设置页面：可视化管理运行时配置（刷新间隔、重试次数、速率限制、健康检查等）
 - `GET/POST /admin/settings` API，支持分组查看和批量更新配置
 - API Key 管理系统：集中管理第三方大模型 API Key（OpenAI、Anthropic、Gemini、OpenRouter、自定义）
