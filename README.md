@@ -288,6 +288,18 @@ docker compose --profile refresher up -d
 docker logs gemini-refresher -f
 ```
 
+**多账号配置**：创建 `data/refresher_accounts.json`，每个账号独立浏览器状态隔离：
+
+```json
+[
+  {"id": "account-0", "psid": "g.a000xxx...", "psidts": "sidts-xxx...", "label": "主账号"},
+  {"id": "account-1", "psid": "g.a000yyy...", "psidts": "sidts-yyy...", "label": "备用账号"}
+]
+```
+
+> [!TIP]
+> 多账号时 `id` 字段必须与 `accounts.json` 中的 ID 一致，refresher 会按 ID 精确更新对应账号的 Cookie，不会串号。不配置此文件时自动使用 `.env` 中的单账号。
+
 > [!NOTE]
 > refresher 使用 Chromium 无头浏览器，首次构建镜像约 1.5GB。运行时每 8 分钟启动浏览器刷新一次，峰值内存约 400-600MB，建议服务器至少 2GB 内存 + 2GB SWAP。
 
