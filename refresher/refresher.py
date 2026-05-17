@@ -203,6 +203,14 @@ class BrowserPool:
                 except Exception as e:
                     logger.error(f"[{acc_id}] Keepalive error: {e}")
 
+    async def update_account_cookies(self, account_id: str, psid: str, psidts: str) -> bool:
+        if account_id in self.accounts:
+            old_acc = self.accounts[account_id]
+            await old_acc.context.close()
+            del self.accounts[account_id]
+        await self._create_account_context(account_id, psid, psidts)
+        return self.accounts.get(account_id, None) is not None and self.accounts[account_id].healthy
+
     async def stop(self):
         if self._keepalive_task:
             self._keepalive_task.cancel()
@@ -261,6 +269,20 @@ async def health():
         "browser": pool.browser is not None,
         "accounts": accounts_status,
     }
+
+
+class UpdateCookiesRequest(BaseModel):
+    account_id: str = "account-0"
+    psid: str
+    psidts: str = ""
+
+
+@app.post("/update-cookies")
+async def update_cookies(req: UpdateCookiesRequest):
+    success = await pool.update_account_cookies(req.account_id, req.psid, req.psidts)
+    if success:
+        return {"status": "ok", "message": f"Account {req.account_id} cookies updated and browser reloaded"}
+    raise HTTPException(503, f"Account {req.account_id} failed to initialize with new cookies")
 
 
 if __name__ == "__main__":
