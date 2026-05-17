@@ -255,6 +255,7 @@
     font-size: 0.875rem;
     font-weight: 500;
     transition: var(--transition);
+    white-space: nowrap;
 }
 
 .language-btn:hover {

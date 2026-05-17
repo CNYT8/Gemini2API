@@ -9,8 +9,12 @@
 ### Added
 - 多语言切换系统（简体中文/繁體中文/English/日本語/한국어），语言偏好 localStorage 持久化
 - 语言切换器组件（右上角下拉菜单），MutationObserver 自动翻译动态元素
+- 全部页面组件 data-i18n 国际化标记（仪表盘/账号管理/日志/模型测试/使用统计/API管理/设置）
 - 自定义确认弹窗（showConfirm），替换浏览器原生 confirm()，支持 warning/danger/info 三种类型
 - 服务重启按钮（右上角控制栏），`POST /admin/restart` 端点，重启后自动轮询恢复并刷新页面
+
+### Fixed
+- 修复 MutationObserver 无限循环导致页面卡死（textContent 变更触发 addedNodes 回调）
 - 设置页面：可视化管理运行时配置（刷新间隔、重试次数、速率限制、健康检查等）
 - `GET/POST /admin/settings` API，支持分组查看和批量更新配置
 - API Key 管理系统：集中管理第三方大模型 API Key（OpenAI、Anthropic、Gemini、OpenRouter、自定义）

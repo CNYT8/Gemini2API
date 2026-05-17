@@ -421,9 +421,20 @@ export function updatePageLanguage() {
 
 export function initI18n() {
     updatePageLanguage();
+    let updating = false;
     const observer = new MutationObserver((mutations) => {
+        if (updating) return;
+        let hasNewElements = false;
         for (const m of mutations) {
-            if (m.addedNodes.length) updatePageLanguage();
+            for (const node of m.addedNodes) {
+                if (node.nodeType === 1) { hasNewElements = true; break; }
+            }
+            if (hasNewElements) break;
+        }
+        if (hasNewElements) {
+            updating = true;
+            updatePageLanguage();
+            updating = false;
         }
     });
     observer.observe(document.body, { childList: true, subtree: true });
