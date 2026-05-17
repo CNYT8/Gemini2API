@@ -11,6 +11,7 @@
 - 旧版模型名别名兼容（gemini-2.5-pro → gemini-3-pro-plus 等）
 - 对话上下文持久化（混合模式）：优先 Gemini 原生 conversation_id 多轮续接，本地 `data/conversations/` 备份历史
 - 请求参数新增 `conversation_id` 字段，响应返回 `conversation_id` 供下次续接
+- 容器时区设置为 Asia/Shanghai，日志显示北京时间
 - Gemini 会话过期时自动 fallback 到完整 prompt 拼接模式，对客户端透明
 - 多语言切换系统（简体中文/繁體中文/English/日本語/한국어），语言偏好 localStorage 持久化
 - 语言切换器组件（右上角下拉菜单），MutationObserver 自动翻译动态元素
