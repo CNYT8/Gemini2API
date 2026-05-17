@@ -248,6 +248,9 @@ class AccountPool:
         for a in self._accounts:
             if a.status == AccountStatus.ACTIVE and a.client:
                 all_models.update(a.client.models)
+        if not all_models:
+            from app.core.gemini_client import KNOWN_MODELS
+            return list(KNOWN_MODELS)
         return sorted(all_models)
 
     @property

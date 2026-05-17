@@ -36,6 +36,18 @@ GENERATE_URL = (
 )
 BATCHEXECUTE_URL = "https://gemini.google.com/_/BardChatUi/data/batchexecute"
 
+KNOWN_MODELS = [
+    "gemini-2.5-pro-preview-05-06",
+    "gemini-2.5-flash-preview-04-17",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+]
+
+MODEL_PATTERN = re.compile(r"models/(gemini-[\d]+\.[\d]+[\w\-]*)")
+MODEL_FALLBACK_PATTERN = re.compile(r"gemini-\d+\.\d+-[a-z]+-?[a-z]*(?:-preview)?(?:-\d{2}-\d{2})?")
+
 
 class GeminiWebClient:
     def __init__(self, psid: str | None = None, psidts: str | None = None):
@@ -133,8 +145,8 @@ class GeminiWebClient:
             else:
                 body = resp.text
                 token_match = re.search(r'"SNlM0e":"([^"]+)"', body)
-                model_hits = re.findall(r"gemini-\d+\.\d+[a-zA-Z0-9.\-]+", body)
-                models_found = sorted(set(m for m in model_hits if len(m) > 15))
+                model_hits = MODEL_FALLBACK_PATTERN.findall(body)
+                models_found = sorted(set(model_hits))
 
                 result = {
                     "valid": token_match is not None,
@@ -238,6 +250,9 @@ class GeminiWebClient:
                     discovered = [m for m in discovered if m in allowed]
                 self._available_models = discovered
                 logger.info(f"Discovered {len(discovered)} models: {discovered[:5]}")
+            elif not self._available_models:
+                self._available_models = list(KNOWN_MODELS)
+                logger.info(f"Using default model list: {KNOWN_MODELS[:3]}")
         except Exception as e:
             msg = f"Token extraction failed: {e}"
             logger.error(msg)
