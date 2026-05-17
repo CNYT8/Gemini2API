@@ -37,14 +37,52 @@ GENERATE_URL = (
 )
 BATCHEXECUTE_URL = "https://gemini.google.com/_/BardChatUi/data/batchexecute"
 
-KNOWN_MODELS = [
-    "gemini-2.5-pro-preview-05-06",
-    "gemini-2.5-flash-preview-04-17",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
-]
+MODEL_HEADER_KEY = "x-goog-ext-525001261-jspb"
+
+GEMINI_MODELS = {
+    "gemini-3-pro": {"id": "9d8ca3786ebdfbea", "capacity": 1, "pro_only": False},
+    "gemini-3-flash": {"id": "fbb127bbb056c959", "capacity": 1, "pro_only": False},
+    "gemini-3-flash-thinking": {"id": "5bf011840784117a", "capacity": 1, "pro_only": False},
+    "gemini-3-pro-plus": {"id": "e6fa609c3fa255c0", "capacity": 4, "pro_only": True},
+    "gemini-3-flash-plus": {"id": "56fdd199312815e2", "capacity": 4, "pro_only": True},
+    "gemini-3-flash-thinking-plus": {"id": "e051ce1aa80aa576", "capacity": 4, "pro_only": True},
+    "gemini-3-pro-advanced": {"id": "e6fa609c3fa255c0", "capacity": 2, "pro_only": True},
+    "gemini-3-flash-advanced": {"id": "56fdd199312815e2", "capacity": 2, "pro_only": True},
+    "gemini-3-flash-thinking-advanced": {"id": "e051ce1aa80aa576", "capacity": 2, "pro_only": True},
+}
+
+MODEL_ALIASES = {
+    "gemini-2.5-pro": "gemini-3-pro-plus",
+    "gemini-2.5-flash": "gemini-3-flash-plus",
+    "gemini-2.5-pro-preview-05-06": "gemini-3-pro-plus",
+    "gemini-2.5-flash-preview-04-17": "gemini-3-flash-plus",
+    "gemini-2.5-flash-preview-05-20": "gemini-3-flash-plus",
+    "gemini-2.0-flash": "gemini-3-flash",
+    "gemini-2.0-flash-lite": "gemini-3-flash",
+    "gemini-1.5-pro": "gemini-3-pro",
+    "gemini-1.5-flash": "gemini-3-flash",
+    "gemini-pro": "gemini-3-pro",
+    "gemini-flash": "gemini-3-flash",
+}
+
+KNOWN_MODELS = list(GEMINI_MODELS.keys())
+
+
+def _build_model_header(model_name: str) -> dict[str, str]:
+    resolved = MODEL_ALIASES.get(model_name, model_name)
+    model_info = GEMINI_MODELS.get(resolved)
+    if not model_info:
+        return {}
+    return {
+        MODEL_HEADER_KEY: f'[1,null,null,null,"{model_info["id"]}",null,null,0,[4],null,null,{model_info["capacity"]}]',
+        "x-goog-ext-73010989-jspb": "[0]",
+        "x-goog-ext-73010990-jspb": "[0]",
+    }
+
+
+def _resolve_model(model_name: str) -> str:
+    return MODEL_ALIASES.get(model_name, model_name)
+
 
 MODELS_CACHE_FILE = Path("data/models_cache.json")
 
@@ -416,10 +454,11 @@ class GeminiWebClient:
         if not self._healthy:
             raise RuntimeError("Client not ready")
 
-        if model not in self._available_models:
+        resolved = _resolve_model(model)
+        if resolved not in GEMINI_MODELS:
             raise ValueError(
                 f"Model '{model}' unavailable. "
-                f"Options: {', '.join(self._available_models[:10])}"
+                f"Options: {', '.join(KNOWN_MODELS)}"
             )
 
         last_err = None
@@ -449,10 +488,15 @@ class GeminiWebClient:
         await self._ensure_session_current()
         self._clear_session_cookies()
 
-        encoded = self._encode_payload(prompt, model, conversation_id)
+        resolved = _resolve_model(model)
+        encoded = self._encode_payload(prompt, resolved, conversation_id)
         form_data = {"at": self._session_token, "f.req": encoded}
         cookies = self._get_cookies()
         headers = self._get_headers("POST", content_type="application/x-www-form-urlencoded")
+
+        model_headers = _build_model_header(resolved)
+        if model_headers:
+            headers.update(model_headers)
 
         resp = await self._http.post(GENERATE_URL, data=form_data, cookies=cookies, headers=headers)
         self._cookie_jar.update_from_response(resp)

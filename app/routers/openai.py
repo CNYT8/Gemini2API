@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.core.account_pool import account_pool as gemini_client
 from app.core.api_forwarder import forward_to_provider
 from app.core.conversation_store import conversation_store
+from app.core.gemini_client import GEMINI_MODELS, MODEL_ALIASES, _resolve_model
 from app.core.stream import split_into_chunks, format_sse
 from app.models.openai import (
     ChatRequest, ChatResponse, Choice, ChoiceMessage,
@@ -42,7 +43,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     model_mapping = request.app.state.model_mapping
     resolved_model = model_mapping.resolve(req.model)
 
-    if resolved_model not in gemini_client.models:
+    if resolved_model not in gemini_client.models and _resolve_model(resolved_model) not in GEMINI_MODELS:
         pool = getattr(request.app.state, 'api_key_pool', None)
         if pool:
             entry = pool.get_key_for_model(resolved_model)

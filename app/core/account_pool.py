@@ -244,15 +244,9 @@ class AccountPool:
 
     @property
     def models(self) -> list[str]:
-        all_models = set()
-        for a in self._accounts:
-            if a.status == AccountStatus.ACTIVE and a.client:
-                all_models.update(a.client.models)
-        if not all_models:
-            from app.core.gemini_client import _load_models_cache, KNOWN_MODELS
-            cached = _load_models_cache()
-            return cached if cached else list(KNOWN_MODELS)
-        return sorted(all_models)
+        from app.core.gemini_client import KNOWN_MODELS, MODEL_ALIASES
+        all_models = list(KNOWN_MODELS) + list(MODEL_ALIASES.keys())
+        return sorted(set(all_models))
 
     @property
     def is_healthy(self) -> bool:
