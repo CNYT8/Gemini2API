@@ -66,7 +66,11 @@ def refresh_account(browser, account):
         inject_cookies_to_state(state_dir, account["psid"], account.get("psidts", ""))
 
     print(f"  [{label}] Opening browser context...")
-    context = browser.new_context(storage_state=state_file)
+    context = browser.new_context(
+        storage_state=state_file,
+        locale="en-US",
+        timezone_id="America/New_York",
+    )
     page = context.new_page()
 
     try:
@@ -91,22 +95,38 @@ def refresh_account(browser, account):
         context.close()
 
 
-def notify_gemini2api(psid, psidts):
+def notify_gemini2api(account_id, psid, psidts):
+    headers = {"Content-Type": "application/json"}
+    if API_KEY:
+        headers["Authorization"] = f"Bearer {API_KEY}"
+
+    # 优先按账号 ID 精确更新（多账号隔离）
     try:
-        headers = {"Content-Type": "application/json"}
-        if API_KEY:
-            headers["Authorization"] = f"Bearer {API_KEY}"
-        resp = http_requests.post(
-            f"{GEMINI2API_URL}/admin/reload-cookies",
+        resp = http_requests.put(
+            f"{GEMINI2API_URL}/admin/accounts/{account_id}/cookies",
             json={"psid": psid, "psidts": psidts},
             headers=headers,
             timeout=10
         )
         if resp.status_code == 200:
-            print(f"  [notify] gemini2api reloaded successfully")
+            print(f"  [notify] {account_id} cookies updated via PUT")
             return True
+        elif resp.status_code == 404:
+            # 账号不存在，fallback 到全局 reload
+            resp2 = http_requests.post(
+                f"{GEMINI2API_URL}/admin/reload-cookies",
+                json={"psid": psid, "psidts": psidts},
+                headers=headers,
+                timeout=10
+            )
+            if resp2.status_code == 200:
+                print(f"  [notify] cookies reloaded via POST (account not in pool)")
+                return True
+            else:
+                print(f"  [notify] reload failed: {resp2.status_code} {resp2.text[:100]}")
+                return False
         else:
-            print(f"  [notify] gemini2api returned {resp.status_code}: {resp.text}")
+            print(f"  [notify] PUT failed: {resp.status_code} {resp.text[:100]}")
             return False
     except Exception as e:
         print(f"  [notify] Failed to reach gemini2api: {e}")
@@ -142,9 +162,11 @@ def refresh_all():
             ]
         )
 
-        for account in accounts:
+        for i, account in enumerate(accounts):
             result = refresh_account(browser, account)
             results.append(result)
+            if i < len(accounts) - 1:
+                time.sleep(5)
 
         browser.close()
 
@@ -152,9 +174,8 @@ def refresh_all():
         json.dump(results, f, indent=2)
 
     active = [r for r in results if r.get("status") == "active"]
-    if active:
-        best = active[0]
-        notify_gemini2api(best["psid"], best["psidts"])
+    for acc in active:
+        notify_gemini2api(acc["id"], acc["psid"], acc["psidts"])
 
     print(f"\n  Summary: {len(active)}/{len(results)} accounts active")
 
