@@ -48,10 +48,10 @@
 
 | 日期 | 更新内容 |
 |------|----------|
-| 2025-05-17 08:00:00 | 对话上下文持久化（混合模式）：Gemini 原生 conversation_id 多轮续接 + 本地备份 + 自动 fallback |
-| 2025-05-17 06:00:00 | 新增 Playwright Cookie 自动续期模块（refresher），支持多账号轮询刷新，无缝对接 gemini2api 热更新 |
-| 2025-05-17 02:00:00 | 多语言覆盖全部页面（仪表盘/账号/日志/测试/统计/API/设置），修复 MutationObserver 无限循环导致页面卡死 |
-| 2025-05-17 01:00:00 | 新增多语言切换（简体中文/繁體中文/English/日本語/한국어），确认弹窗美化为自定义 Modal |
+| 2025-05-17 17:00:00 | 模型选择修复（通过 x-goog-ext header 真正切换模型），支持 gemini-3 全系列 + 旧版别名兼容 |
+| 2025-05-17 15:30:00 | 对话上下文持久化（混合模式）：Gemini 原生 conversation_id 多轮续接 + 本地备份 + 自动 fallback |
+| 2025-05-17 09:00:00 | 新增多语言切换（简体中文/繁體中文/English/日本語/한국어），确认弹窗美化为自定义 Modal |
+| 2025-05-17 08:30:00 | 多语言覆盖全部页面（仪表盘/账号/日志/测试/统计/API/设置），修复 MutationObserver 无限循环 |
 | 2025-05-16 19:00:00 | 新增服务重启按钮（右上角控制栏），支持一键重启服务 |
 | 2025-05-16 18:40:00 | 日志持久化到 data/logs.json（重启不丢失）、每页15条；QR公告改为从 GitHub 仓库 api/ 目录远程获取，所有部署实例共享公告内容 |
 | 2025-05-16 18:00:00 | 仪表盘新增运行时间实时显示、二维码卡片（文字/图片从 api/ 目录动态加载，修改无需重建）、图片点击放大；版本号统一为 APP_VERSION 常量 |
@@ -276,32 +276,14 @@ docker compose logs -f
 > [!TIP]
 > 不创建 `accounts.json` 时，服务自动使用 `.env` 中的单账号模式。也可以通过 `POST /admin/accounts` API 在运行时动态添加账号。
 
-### Cookie 自动续期（可选）
+### Cookie 自动保活
 
-Gemini 的 `__Secure-1PSIDTS` Cookie 约 10 分钟过期。启用 refresher 模块后，Playwright 会定时用真实浏览器访问 Gemini 页面触发自动续期，并通知 gemini2api 热更新，实现 Cookie 永不过期。
+gemini2api 内置 Cookie 自动轮换机制：每 5 分钟通过 Google RotateCookies API 刷新 `__Secure-1PSIDTS`，配合 batchexecute 心跳模拟浏览器活跃行为，延长 session 寿命。
 
-```bash
-# 启动主服务 + Cookie 自动续期
-docker compose --profile refresher up -d
-
-# 查看 refresher 日志
-docker logs gemini-refresher -f
-```
-
-**多账号配置**：创建 `data/refresher_accounts.json`，每个账号独立浏览器状态隔离：
-
-```json
-[
-  {"id": "account-0", "psid": "g.a000xxx...", "psidts": "sidts-xxx...", "label": "主账号"},
-  {"id": "account-1", "psid": "g.a000yyy...", "psidts": "sidts-yyy...", "label": "备用账号"}
-]
-```
-
-> [!TIP]
-> 多账号时 `id` 字段必须与 `accounts.json` 中的 ID 一致，refresher 会按 ID 精确更新对应账号的 Cookie，不会串号。不配置此文件时自动使用 `.env` 中的单账号。
+如需手动更新 Cookie，可通过 Web 面板的「账号管理」→「更新 Cookie」操作，无需重启服务。
 
 > [!NOTE]
-> refresher 使用 Chromium 无头浏览器，首次构建镜像约 1.5GB。运行时每 8 分钟启动浏览器刷新一次，峰值内存约 400-600MB，建议服务器至少 2GB 内存 + 2GB SWAP。
+> Cookie 寿命受 Google 风控策略影响，数据中心 IP 通常可维持数小时。如 Cookie 频繁过期，建议使用住宅 IP 或增加账号数量做轮询。
 
 ### 3. 验证
 

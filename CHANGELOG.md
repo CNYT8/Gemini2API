@@ -7,14 +7,8 @@
 ## [Unreleased]
 
 ### Added
-- Playwright Cookie 自动续期模块（`refresher/`），真实 Chromium 浏览器定时刷新 Cookie
-- 支持多账号串行刷新，每个账号独立浏览器状态隔离（独立 Context + 独立 state 文件）
-- 多账号按 `account_id` 精确推送 Cookie（`PUT /admin/accounts/{id}/cookies`），不会串号
-- 账号间 5 秒延迟，防止同 IP 快速切换触发 Google 风控
-- 刷新完成后自动通知 gemini2api 热更新，零手动操作
-- docker-compose profile 支持：`--profile refresher` 可选启用
-- 极限 Chromium 优化参数（单进程/禁GPU/禁扩展），降低内存占用
-- `data/refresher_accounts.json` 多账号配置文件支持
+- 模型选择通过 `x-goog-ext-525001261-jspb` header 实现真正切换，支持 gemini-3 全系列
+- 旧版模型名别名兼容（gemini-2.5-pro → gemini-3-pro-plus 等）
 - 对话上下文持久化（混合模式）：优先 Gemini 原生 conversation_id 多轮续接，本地 `data/conversations/` 备份历史
 - 请求参数新增 `conversation_id` 字段，响应返回 `conversation_id` 供下次续接
 - Gemini 会话过期时自动 fallback 到完整 prompt 拼接模式，对客户端透明
@@ -23,9 +17,11 @@
 - 全部页面组件 data-i18n 国际化标记（仪表盘/账号管理/日志/模型测试/使用统计/API管理/设置）
 - 自定义确认弹窗（showConfirm），替换浏览器原生 confirm()，支持 warning/danger/info 三种类型
 - 服务重启按钮（右上角控制栏），`POST /admin/restart` 端点，重启后自动轮询恢复并刷新页面
+- 模型测试 textarea 添加快捷键提示（Enter 发送，Shift+Enter 换行）
 
 ### Fixed
 - 修复 MutationObserver 无限循环导致页面卡死（textContent 变更触发 addedNodes 回调）
+- 模型发现改进：严格正则过滤 + 磁盘缓存，Cookie 正常时缓存真实可用模型
 - 设置页面：可视化管理运行时配置（刷新间隔、重试次数、速率限制、健康检查等）
 - `GET/POST /admin/settings` API，支持分组查看和批量更新配置
 - API Key 管理系统：集中管理第三方大模型 API Key（OpenAI、Anthropic、Gemini、OpenRouter、自定义）
