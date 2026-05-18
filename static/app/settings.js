@@ -1,16 +1,20 @@
 import { apiCall } from './auth.js';
 import { showToast } from './utils.js';
+import { t } from './i18n.js';
 
 let originalSettings = {};
 let modelMappings = {};
 
-const GROUP_TITLES = {
-  performance: '性能',
-  rate_limiting: '速率限制',
-  health_check: '健康检查',
-  account_management: '账号管理',
-  usage_stats: '用量统计'
-};
+function getGroupTitle(groupKey) {
+  const map = {
+    performance: 'settings.group.performance',
+    rate_limiting: 'settings.group.rateLimit',
+    health_check: 'settings.group.healthCheck',
+    account_management: 'settings.group.accounts',
+    usage_stats: 'settings.group.stats'
+  };
+  return t(map[groupKey] || groupKey);
+}
 
 const GROUP_ICONS = {
   performance: 'fa-bolt',
@@ -20,21 +24,24 @@ const GROUP_ICONS = {
   usage_stats: 'fa-chart-line'
 };
 
-const FIELD_LABELS = {
-  refresh_interval: 'Cookie刷新间隔(分钟)',
-  max_retries: '最大重试次数',
-  jitter_enabled: '启用时间抖动',
-  rate_limit_enabled: '启用速率限制',
-  rate_limit_window: '限制窗口(秒)',
-  rate_limit_max: '窗口最大请求数',
-  health_check_enabled: '启用健康检查',
-  health_check_interval: '检查间隔(分钟)',
-  rotation_strategy: '轮换策略',
-  max_concurrent_per_account: '单账号最大并发',
-  usage_stats_enabled: '启用用量统计',
-  usage_stats_interval: '快照间隔(秒)',
-  usage_stats_retention_days: '数据保留天数'
-};
+function getFieldLabel(key) {
+  const map = {
+    refresh_interval: 'settings.field.refreshInterval',
+    max_retries: 'settings.field.maxRetries',
+    jitter_enabled: 'settings.field.jitterEnabled',
+    rate_limit_enabled: 'settings.field.rateLimitEnabled',
+    rate_limit_window: 'settings.field.rateLimitWindow',
+    rate_limit_max: 'settings.field.rateLimitMax',
+    health_check_enabled: 'settings.field.healthCheckEnabled',
+    health_check_interval: 'settings.field.healthCheckInterval',
+    rotation_strategy: 'settings.field.rotationStrategy',
+    max_concurrent_per_account: 'settings.field.maxConcurrent',
+    usage_stats_enabled: 'settings.field.usageStatsEnabled',
+    usage_stats_interval: '快照间隔(秒)',
+    usage_stats_retention_days: '数据保留天数'
+  };
+  return map[key] ? (map[key].startsWith('settings.') ? t(map[key]) : map[key]) : key;
+}
 
 const ROTATION_OPTIONS = [
   { value: 'round-robin', label: '轮询' },
@@ -76,7 +83,7 @@ function renderSettings(settings) {
   let html = '';
 
   for (const [groupKey, groupSettings] of Object.entries(settings)) {
-    const groupTitle = GROUP_TITLES[groupKey] || groupKey;
+    const groupTitle = getGroupTitle(groupKey);
     const groupIcon = GROUP_ICONS[groupKey] || 'fa-cog';
 
     html += '<div class="settings-group">';
@@ -84,7 +91,7 @@ function renderSettings(settings) {
     html += '<div class="settings-fields">';
 
     for (const [key, value] of Object.entries(groupSettings)) {
-      const label = FIELD_LABELS[key] || key;
+      const label = getFieldLabel(key);
       const fullKey = groupKey + '.' + key;
       const input = createFieldInput(fullKey, value);
       html += '<div class="setting-field"><label>' + label + '</label>' + input + '</div>';
@@ -122,7 +129,7 @@ function renderModelMapping() {
   html += '</div>';
   html += '</div>';
   html += '<div class="mapping-actions">';
-  html += '<button class="btn btn-primary" id="btn-save-mapping">保存映射</button>';
+  html += '<button class="btn btn-primary" id="btn-save-mapping">' + t('settings.saveMapping') + '</button>';
   html += '</div>';
   html += '</div>';
 
@@ -286,16 +293,16 @@ async function saveSettings() {
 
   try {
     await apiCall('POST', '/admin/settings', { settings: apiSettings });
-    showToast('设置已保存', 'success');
+    showToast(t('settings.saved'), 'success');
     await loadSettings();
   } catch (error) {
-    showToast('保存设置失败: ' + error.message, 'error');
+    showToast(t('settings.saveFailed') + ': ' + error.message, 'error');
   }
 }
 
 async function resetSettings() {
   await loadSettings();
-  showToast('设置已重置', 'info');
+  showToast(t('settings.resetDone'), 'info');
 }
 
 export function initSettings() {

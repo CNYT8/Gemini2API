@@ -228,11 +228,11 @@ function renderAccountStatusGrid(accounts) {
                 ${getStatusBadge(account.status)}
             </div>
             <div class="account-detail">
-                <span class="label">请求数</span>
+                <span class="label">${t('accounts.requests')}</span>
                 <span class="value">${formatNumber(account.request_count || 0)}</span>
             </div>
             <div class="account-detail">
-                <span class="label">错误数</span>
+                <span class="label">${t('accounts.errors')}</span>
                 <span class="value">${formatNumber(account.error_count || 0)}</span>
             </div>
             <div class="account-detail">
@@ -240,7 +240,7 @@ function renderAccountStatusGrid(accounts) {
                 <span class="value">${account.active_requests || 0}</span>
             </div>
             <div class="account-detail">
-                <span class="label">模型数</span>
+                <span class="label">${t('accounts.models')}</span>
                 <span class="value">${account.models_count || 0}</span>
             </div>
         </div>
@@ -253,7 +253,7 @@ function renderModelsList(modelsSet) {
 
     const models = Array.from(modelsSet).sort();
     if (models.length === 0) {
-        container.innerHTML = '<span class="text-muted">暂无可用模型</span>';
+        container.innerHTML = `<span class="text-muted">${t('accounts.noModels')}</span>`;
         return;
     }
 
@@ -270,7 +270,7 @@ function updatePlaygroundModels(modelsSet) {
 
     const models = Array.from(modelsSet).sort();
     if (models.length === 0) {
-        select.innerHTML = '<option value="">暂无可用模型</option>';
+        select.innerHTML = `<option value="">${t('accounts.noModels')}</option>`;
         return;
     }
 
@@ -297,7 +297,7 @@ async function loadAccounts() {
                     <i class="fas fa-users"></i>
                     <p>暂无账号</p>
                     <button class="btn btn-primary" onclick="window.app.openAddAccountModal()">
-                        <i class="fas fa-plus"></i> 添加第一个账号
+                        <i class="fas fa-plus"></i> ${t('accounts.noAccounts')}
                     </button>
                 </div>`;
             return;
@@ -330,13 +330,13 @@ async function loadAccounts() {
                 </div>
                 <div class="account-actions">
                     <button class="btn btn-sm btn-outline" onclick="window.app.checkAccount('${account.id}')">
-                        <i class="fas fa-heartbeat"></i> 检测
+                        <i class="fas fa-heartbeat"></i> ${t('accounts.check')}
                     </button>
                     <button class="btn btn-sm btn-outline" onclick="window.app.openUpdateCookieModal('${account.id}', '${account.label || ''}')">
-                        <i class="fas fa-cookie-bite"></i> 更新Cookie
+                        <i class="fas fa-cookie-bite"></i> ${t('accounts.updateCookie')}
                     </button>
                     <button class="btn btn-sm btn-danger" onclick="window.app.removeAccount('${account.id}')">
-                        <i class="fas fa-trash"></i> 删除
+                        <i class="fas fa-trash"></i> ${t('accounts.delete')}
                     </button>
                 </div>
             </div>
@@ -348,14 +348,14 @@ async function loadAccounts() {
 
 async function checkAccount(accountId) {
     try {
-        showToast('正在检测账号...', 'info');
+        showToast(t('accounts.checking'), 'info');
         const result = await apiCall('GET', `/admin/accounts/${accountId}/check`);
         const msg = result.valid ? '账号有效' : '账号无效';
         showToast(`${msg} | 模型: ${result.models_count || 0}`, result.valid ? 'success' : 'error');
         await loadAccounts();
         await loadDashboard();
     } catch (error) {
-        showToast(`检测失败: ${error.message}`, 'error');
+        showToast(`${t('accounts.checkFailed')}: ${error.message}`, 'error');
     }
 }
 
@@ -370,13 +370,13 @@ async function removeAccount(accountId) {
     if (!confirmed) return;
 
     try {
-        showToast('正在删除...', 'info');
+        showToast(t('accounts.deleting'), 'info');
         await apiCall('DELETE', `/admin/accounts/${accountId}`);
-        showToast('账号已删除', 'success');
+        showToast(t('accounts.deleted'), 'success');
         await loadAccounts();
         await loadDashboard();
     } catch (error) {
-        showToast(`删除失败: ${error.message}`, 'error');
+        showToast(`${t('accounts.deleteFailed')}: ${error.message}`, 'error');
     }
 }
 
@@ -405,14 +405,14 @@ async function submitAddAccount() {
     }
 
     try {
-        showToast('正在添加账号...', 'info');
+        showToast(t('accounts.adding'), 'info');
         await apiCall('POST', '/admin/accounts', { psid, psidts, label });
-        showToast('账号添加成功', 'success');
+        showToast(t('accounts.added'), 'success');
         closeAddAccountModal();
         await loadAccounts();
         await loadDashboard();
     } catch (error) {
-        showToast(`添加失败: ${error.message}`, 'error');
+        showToast(`${t('accounts.addFailed')}: ${error.message}`, 'error');
     }
 }
 
