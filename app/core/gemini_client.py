@@ -232,6 +232,10 @@ class GeminiWebClient:
                 model_hits = re.findall(r"gemini-\d+\.\d+[a-zA-Z0-9.\-]+", body)
                 models_found = _filter_valid_models(model_hits)
 
+                if token_match:
+                    self._session_token = token_match.group(1)
+                    self._healthy = True
+
                 result = {
                     "valid": token_match is not None,
                     "has_token": token_match is not None,
