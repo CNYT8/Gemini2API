@@ -444,6 +444,13 @@ body {
 
 select.form-control {
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+select.form-control option {
+    background: var(--bg-primary);
+    color: var(--text-primary);
 }
 
 textarea.form-control {

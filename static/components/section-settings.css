@@ -5,10 +5,10 @@
 }
 
 .settings-group {
-    background: var(--card-bg, #fff);
+    background: var(--bg-primary);
     border-radius: 12px;
     padding: 1.5rem;
-    border: 1px solid var(--border-color, #e2e8f0);
+    border: 1px solid var(--border-color);
 }
 
 .settings-group h3 {
@@ -17,11 +17,11 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    color: var(--text-primary, #1e293b);
+    color: var(--text-primary);
 }
 
 .settings-group h3 i {
-    color: var(--primary-color, #059669);
+    color: var(--primary-color);
 }
 
 .settings-fields {
@@ -39,25 +39,25 @@
 .setting-field label {
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
     text-transform: uppercase;
 }
 
 .setting-field input,
 .setting-field select {
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color, #e2e8f0);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 0.9rem;
-    background: var(--input-bg, #f8fafc);
-    color: var(--text-primary, #1e293b);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
     transition: border-color 0.2s;
 }
 
 .setting-field input:focus,
 .setting-field select:focus {
     outline: none;
-    border-color: var(--primary-color, #059669);
+    border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
 }
 
@@ -99,7 +99,7 @@
 }
 
 .section-desc {
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
     margin: -0.5rem 0 1.5rem 0;
     font-size: 0.9rem;
 }
@@ -115,7 +115,7 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.5rem 1rem;
-    border: 1px solid var(--border-color, #e2e8f0);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.85rem;
@@ -123,16 +123,16 @@
 }
 
 .radio-option:has(input:checked) {
-    border-color: var(--primary-color, #059669);
+    border-color: var(--primary-color);
     background: rgba(5, 150, 105, 0.05);
 }
 
 .radio-option input[type="radio"] {
-    accent-color: var(--primary-color, #059669);
+    accent-color: var(--primary-color);
 }
 
 .mapping-desc {
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
     font-size: 0.85rem;
     margin: 0 0 1rem 0;
 }
@@ -142,10 +142,10 @@
     grid-template-columns: 1fr 1fr 40px;
     gap: 0.5rem;
     padding: 0 0 0.5rem 0;
-    border-bottom: 1px solid var(--border-color, #e2e8f0);
+    border-bottom: 1px solid var(--border-color);
     font-size: 0.75rem;
     font-weight: 600;
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
     text-transform: uppercase;
 }
 
@@ -159,20 +159,20 @@
 
 .mapping-row input {
     padding: 0.4rem 0.6rem;
-    border: 1px solid var(--border-color, #e2e8f0);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     font-size: 0.85rem;
-    background: var(--input-bg, #f8fafc);
+    background: var(--bg-tertiary);
 }
 
 .mapping-row input:focus {
     outline: none;
-    border-color: var(--primary-color, #059669);
+    border-color: var(--primary-color);
 }
 
 .mapping-row input[readonly] {
-    background: var(--bg-secondary, #f1f5f9);
-    color: var(--text-secondary, #64748b);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
 }
 
 .btn-icon {
@@ -185,7 +185,7 @@
     border-radius: 6px;
     cursor: pointer;
     background: transparent;
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
     transition: background 0.2s, color 0.2s;
 }
 
