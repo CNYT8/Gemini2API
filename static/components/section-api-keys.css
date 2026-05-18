@@ -91,8 +91,8 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.25rem 0.6rem;
-    background: var(--primary-color, #e2e8f0);
-    color: var(--text-secondary, #64748b);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
 }
 
 .ak-model-chip:hover {
@@ -148,8 +148,8 @@
     border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 600;
-    background: #ecfdf5;
-    color: #059669;
+    background: var(--success-bg);
+    color: var(--success-text);
 }
 
 .ak-key-masked {
@@ -159,12 +159,12 @@
 }
 
 .ak-status-active {
-    color: #059669;
+    color: var(--success-color);
     font-weight: 600;
 }
 
 .ak-status-disabled {
-    color: #ef4444;
+    color: var(--danger-color);
     font-weight: 600;
 }
 

@@ -133,8 +133,8 @@
 }
 
 .badge-ingress {
-    background: rgba(37, 99, 235, 0.1);
-    color: #2563eb;
+    background: var(--info-bg);
+    color: var(--info-color);
 }
 
 .badge-egress {
@@ -147,10 +147,10 @@
     font-size: 0.8rem;
 }
 
-.status-2xx { color: var(--success-color, #10b981); }
-.status-3xx { color: #2563eb; }
-.status-4xx { color: #ea580c; }
-.status-5xx { color: var(--danger-color, #ef4444); }
+.status-2xx { color: var(--success-color); }
+.status-3xx { color: var(--info-color); }
+.status-4xx { color: var(--warning-color); }
+.status-5xx { color: var(--danger-color); }
 
 .logs-detail {
     width: 350px;

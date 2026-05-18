@@ -149,6 +149,13 @@ function renderChart(container, data) {
     const cw = W - pad.left - pad.right;
     const ch = H - pad.top - pad.bottom;
 
+    // Get theme-aware colors from CSS variables
+    const styles = getComputedStyle(document.documentElement);
+    const borderColor = styles.getPropertyValue('--border-color').trim();
+    const textSecondary = styles.getPropertyValue('--text-secondary').trim();
+    const primaryColor = styles.getPropertyValue('--primary-color').trim();
+    const warningColor = styles.getPropertyValue('--warning-color').trim();
+
     const maxReq = Math.max(...data.map(d => d.request_count), 1);
     const maxLat = Math.max(...data.map(d => d.avg_latency_ms), 1);
     const gap = cw / data.length;
@@ -158,15 +165,15 @@ function renderChart(container, data) {
     for (let i = 0; i <= 4; i++) {
         const y = pad.top + ch - (ch * i / 4);
         const val = Math.round(maxReq * i / 4);
-        svg += '<line x1="' + pad.left + '" y1="' + y + '" x2="' + (W - pad.right) + '" y2="' + y + '" stroke="#e2e8f0" stroke-dasharray="2,2"/>';
-        svg += '<text x="' + (pad.left - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10" fill="#64748b">' + val + '</text>';
+        svg += '<line x1="' + pad.left + '" y1="' + y + '" x2="' + (W - pad.right) + '" y2="' + y + '" stroke="' + borderColor + '" stroke-dasharray="2,2"/>';
+        svg += '<text x="' + (pad.left - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10" fill="' + textSecondary + '">' + val + '</text>';
     }
 
     data.forEach((d, i) => {
         const x = pad.left + i * gap + (gap - barW) / 2;
         const h = (d.request_count / maxReq) * ch;
         const y = pad.top + ch - h;
-        svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" fill="#059669" opacity="0.7" rx="2"/>';
+        svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + h + '" fill="' + primaryColor + '" opacity="0.7" rx="2"/>';
     });
 
     let points = data.map((d, i) => {
@@ -174,12 +181,12 @@ function renderChart(container, data) {
         const y = pad.top + ch - (d.avg_latency_ms / maxLat) * ch;
         return x + ',' + y;
     }).join(' ');
-    svg += '<polyline points="' + points + '" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round"/>';
+    svg += '<polyline points="' + points + '" fill="none" stroke="' + warningColor + '" stroke-width="2" stroke-linejoin="round"/>';
 
     for (let i = 0; i <= 4; i++) {
         const y = pad.top + ch - (ch * i / 4);
         const val = Math.round(maxLat * i / 4);
-        svg += '<text x="' + (W - pad.right + 8) + '" y="' + (y + 4) + '" font-size="10" fill="#f59e0b">' + val + 'ms</text>';
+        svg += '<text x="' + (W - pad.right + 8) + '" y="' + (y + 4) + '" font-size="10" fill="' + warningColor + '">' + val + 'ms</text>';
     }
 
     const step = Math.max(1, Math.floor(data.length / 8));
@@ -193,13 +200,13 @@ function renderChart(container, data) {
         if (currentGranularity === 'daily' || currentHours === 'all' || (typeof currentHours === 'number' && currentHours > 48)) {
             label = (t.getMonth() + 1) + '/' + t.getDate() + ' ' + hh + ':' + mm;
         }
-        svg += '<text x="' + x + '" y="' + (H - pad.bottom + 16) + '" text-anchor="middle" font-size="10" fill="#64748b">' + label + '</text>';
+        svg += '<text x="' + x + '" y="' + (H - pad.bottom + 16) + '" text-anchor="middle" font-size="10" fill="' + textSecondary + '">' + label + '</text>';
     });
 
-    svg += '<rect x="' + pad.left + '" y="8" width="10" height="10" fill="#059669" opacity="0.7" rx="2"/>';
-    svg += '<text x="' + (pad.left + 14) + '" y="17" font-size="11" fill="#64748b">请求数</text>';
-    svg += '<line x1="' + (pad.left + 60) + '" y1="13" x2="' + (pad.left + 72) + '" y2="13" stroke="#f59e0b" stroke-width="2"/>';
-    svg += '<text x="' + (pad.left + 76) + '" y="17" font-size="11" fill="#64748b">延迟</text>';
+    svg += '<rect x="' + pad.left + '" y="8" width="10" height="10" fill="' + primaryColor + '" opacity="0.7" rx="2"/>';
+    svg += '<text x="' + (pad.left + 14) + '" y="17" font-size="11" fill="' + textSecondary + '">请求数</text>';
+    svg += '<line x1="' + (pad.left + 60) + '" y1="13" x2="' + (pad.left + 72) + '" y2="13" stroke="' + warningColor + '" stroke-width="2"/>';
+    svg += '<text x="' + (pad.left + 76) + '" y="17" font-size="11" fill="' + textSecondary + '">延迟</text>';
 
     svg += '</svg>';
     container.innerHTML = svg;

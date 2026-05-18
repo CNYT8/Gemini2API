@@ -121,8 +121,9 @@
 }
 
 .chat-message.assistant .chat-avatar {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: white;
+    background: var(--bg-tertiary);
+    color: var(--primary-color);
+    border: 2px solid var(--primary-color);
 }
 
 .chat-bubble {
