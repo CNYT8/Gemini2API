@@ -248,11 +248,15 @@ async def perform_update():
         time.sleep(0.5)
         try:
             repo_path = "/app/repo"
+            # Mark repo as safe
+            subprocess.run(
+                ["git", "config", "--global", "--add", "safe.directory", repo_path],
+                capture_output=True, timeout=5
+            )
             # Git pull
             result = subprocess.run(
                 ["git", "-C", repo_path, "pull", "origin", "main"],
-                capture_output=True, text=True, timeout=60,
-                env={**os.environ, "GIT_DISCOVERY_ACROSS_FILESYSTEM": "1"}
+                capture_output=True, text=True, timeout=60
             )
             logger.info(f"Git pull: {result.stdout.strip()} {result.stderr.strip()}")
 
