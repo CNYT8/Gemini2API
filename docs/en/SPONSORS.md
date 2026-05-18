@@ -1,6 +1,6 @@
 # ☕ Support & Contribute
 
-Find this helpful? Buy the author a coffee or join the WeChat group for support. QR codes are at the top of the repository homepage.
+Find this helpful? Buy the author a coffee or join the WeChat group for support. QR codes are at the top of the [repository homepage](README.md).
 
 ---
 
@@ -10,20 +10,20 @@ Gemini2API is an open-source project maintained primarily by an individual. If t
 
 - ⭐ Star the project
 - 🔗 Share with friends who might need it
-- 🐛 Submit Issues to report bugs or suggestions
+- 🐛 Submit [Issues](https://github.com/xwteam/gemini2api/issues) to report bugs or suggestions
 - 🔧 Submit PRs to contribute code or documentation
 
 ---
 
 ## 🙏 Acknowledgments
 
-Thanks to all users who have submitted bug reproductions, logs, compatibility feedback, and feature suggestions in Issues. This feedback has directly driven iterations of core capabilities like Cookie keep-alive, multi-account rotation, model selection, multi-language support, and the Web panel.
+Thanks to all users who have submitted bug reproductions, logs, compatibility feedback, and feature suggestions in [Issues](https://github.com/xwteam/gemini2api/issues). This feedback has directly driven iterations of core capabilities like Cookie keep-alive, multi-account rotation, model selection, multi-language support, and the Web panel.
 
 ---
 
 ## 📢 Community Group
 
-Join the WeChat group for usage help, experience sharing, and new feature discussions. Scan the QR code at the top of the repository homepage to join.
+Join the WeChat group for usage help, experience sharing, and new feature discussions. Scan the QR code at the top of the [repository homepage](README.md) to join.
 
 ---
 
