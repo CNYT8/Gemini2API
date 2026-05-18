@@ -1,5 +1,6 @@
 import { apiCall } from './auth.js';
 import { showToast } from './utils.js';
+import { t } from './i18n.js';
 
 let keysData = [];
 let catalogData = {};
@@ -90,7 +91,7 @@ function handleProviderChange() {
         baseUrlInput.value = '';
     }
 
-    modelsList.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem">点击"获取"加载模型列表，或手动输入模型名回车添加</span>';
+    modelsList.innerHTML = `<span style="color:var(--text-secondary);font-size:0.8rem">${t('apiKeys.modelsHint')}</span>`;
 }
 
 function renderModelCheckboxes(models) {
@@ -189,8 +190,8 @@ function renderKeysList() {
     updateBatchBar();
 
     if (keysData.length === 0) {
-        container.innerHTML = '<div class="ak-empty"><i class="fas fa-key"></i><p>暂无 API Keys</p>' +
-            '<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'ak-add-btn\').click()"><i class="fas fa-plus"></i> 添加第一个 Key</button></div>';
+        container.innerHTML = `<div class="ak-empty"><i class="fas fa-key"></i><p>${t('apiKeys.noKeys')}</p>` +
+            `<button class="btn btn-primary btn-sm" onclick="document.getElementById('ak-add-btn').click()"><i class="fas fa-plus"></i> ${t('apiKeys.addFirst')}</button></div>`;
         return;
     }
 

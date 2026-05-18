@@ -3,6 +3,7 @@
  */
 
 import { apiCall } from './auth.js';
+import { t } from './i18n.js';
 import { formatNumber, showToast } from './utils.js';
 
 let currentGranularity = 'hourly';
@@ -216,7 +217,7 @@ function renderModelTable(modelRequests) {
 
     const maxCount = Math.max(entries[0][1], 1);
     const total = entries.reduce((s, e) => s + e[1], 0);
-    let html = '<table><thead><tr><th>模型</th><th>请求数</th><th>占比</th></tr></thead><tbody>';
+    let html = `<table><thead><tr><th>${t('playground.model')}</th><th>${t('accounts.requests')}</th><th>${t('usage.proportion')}</th></tr></thead><tbody>`;
 
     entries.forEach(([model, count]) => {
         const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
