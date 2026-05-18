@@ -45,7 +45,6 @@ function getFieldLabel(key) {
 
 const ROTATION_OPTIONS = [
   { value: 'round-robin', labelKey: 'settings.strategy.roundRobin' },
-  { value: 'least-used', labelKey: 'settings.strategy.leastUsed' },
   { value: 'failover', labelKey: 'settings.strategy.failover' }
 ];
 
