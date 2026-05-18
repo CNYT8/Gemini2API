@@ -253,16 +253,16 @@ async def perform_update():
                 ["git", "config", "--global", "--add", "safe.directory", repo_path],
                 capture_output=True, timeout=5
             )
-            # Git pull
-            result = subprocess.run(
-                ["git", "-C", repo_path, "pull", "origin", "main"],
+            # Git fetch + reset (force overwrite local changes)
+            subprocess.run(
+                ["git", "-C", repo_path, "fetch", "origin", "main"],
                 capture_output=True, text=True, timeout=60
             )
-            logger.info(f"Git pull: {result.stdout.strip()} {result.stderr.strip()}")
-
-            if result.returncode != 0:
-                logger.error(f"Git pull failed: {result.stderr}")
-                return
+            result = subprocess.run(
+                ["git", "-C", repo_path, "reset", "--hard", "origin/main"],
+                capture_output=True, text=True, timeout=30
+            )
+            logger.info(f"Git update: {result.stdout.strip()}")
 
             # Rebuild and restart via docker socket
             subprocess.run(
