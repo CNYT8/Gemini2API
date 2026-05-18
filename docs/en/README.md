@@ -58,9 +58,9 @@
 
 | Date | Update |
 |------|--------|
+| 2025-05-18 16:30:00 | v1.6.1 - Dark theme comprehensive fixes, update check dialog beautification, GitHub Actions auto-build images, failover strategy |
 | 2025-05-17 23:20:00 | Unified model list to user-friendly names, added thinking mode (gemini-2.5-flash-thinking) and Pro mode, fixed Playground conversation context |
 | 2025-05-17 22:30:00 | Fixed container timezone to Asia/Shanghai, logs show Beijing time |
-| 2025-05-17 17:00:00 | Fixed model selection (truly switch models via x-goog-ext header), support gemini-3 full series + legacy alias compatibility |
 
 ---
 
