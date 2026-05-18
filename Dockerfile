@@ -16,8 +16,6 @@ COPY --from=builder /install /usr/local
 COPY app/ ./app/
 COPY static/ ./static/
 
-RUN chown -R appuser:appuser /app
-
 EXPOSE 5918
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5918"]
