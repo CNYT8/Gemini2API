@@ -7,9 +7,8 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates wget && \
-    rm -rf /var/lib/apt/lists/* && \
-    useradd -m -s /bin/bash appuser
+    ca-certificates wget git && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -18,7 +17,6 @@ COPY app/ ./app/
 COPY static/ ./static/
 
 RUN chown -R appuser:appuser /app
-USER appuser
 
 EXPOSE 5918
 

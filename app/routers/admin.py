@@ -209,3 +209,52 @@ async def restart_server():
 
     threading.Thread(target=_restart, daemon=True).start()
     return {"status": "ok", "message": "Server restarting..."}
+
+
+@router.get("/check-update")
+async def check_update():
+    """Check if a new version is available via GitHub Releases"""
+    import httpx
+
+    current = APP_VERSION
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://api.github.com/repos/xwteam/gemini2api/releases/latest",
+                headers={"Accept": "application/vnd.github.v3+json"}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                latest = data.get("tag_name", "").lstrip("v")
+                return {
+                    "current": current,
+                    "latest": latest,
+                    "has_update": latest != current and latest != "",
+                    "update_url": data.get("html_url", "https://github.com/xwteam/gemini2api/releases")
+                }
+    except Exception as e:
+        logger.error(f"Failed to check update: {e}")
+
+    return {"current": current, "latest": current, "has_update": False, "update_url": "https://github.com/xwteam/gemini2api/releases"}
+
+
+@router.post("/update")
+async def perform_update():
+    """Perform one-click update by pulling latest code and rebuilding containers"""
+    import subprocess
+    import threading
+
+    def _update():
+        time.sleep(0.5)
+        try:
+            # Execute update commands in the host project directory
+            subprocess.run(
+                ["sh", "-c", "cd /app/repo && git pull origin main && docker compose build && docker compose up -d"],
+                timeout=300,
+                capture_output=True
+            )
+        except Exception as e:
+            logger.error(f"Update failed: {e}")
+
+    threading.Thread(target=_update, daemon=True).start()
+    return {"status": "ok", "message": "Update started, service will restart shortly..."}
