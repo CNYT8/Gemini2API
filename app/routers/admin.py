@@ -230,7 +230,8 @@ async def check_update():
                     "current": current,
                     "latest": latest,
                     "has_update": latest != current and latest != "",
-                    "update_url": data.get("html_url", "https://github.com/xwteam/gemini2api/releases")
+                    "update_url": data.get("html_url", "https://github.com/xwteam/gemini2api/releases"),
+                    "release_notes": data.get("body", "")
                 }
     except Exception as e:
         logger.error(f"Failed to check update: {e}")

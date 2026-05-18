@@ -649,16 +649,40 @@ async function handleCheckUpdate() {
     if (!btn) return;
 
     if (updateInfo && updateInfo.has_update) {
-        // Show update command dialog
         const updateCmd = 'docker compose pull && docker compose up -d';
-        const confirmed = await showConfirm({
-            title: t('confirm.update.title') + ` v${updateInfo.latest}`,
-            message: t('confirm.update.message') + `\n\n${updateCmd}`,
-            confirmText: t('toast.copied'),
-            cancelText: t('confirm.cancel'),
-            type: 'warning'
-        });
-        if (confirmed) {
+        const releaseNotes = updateInfo.release_notes || '';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.style.bottom = '0';
+        overlay.innerHTML = `
+            <div style="background:var(--bg-primary);border-radius:var(--radius-xl,16px);width:90%;max-width:460px;box-shadow:0 20px 60px rgba(0,0,0,0.3);animation:modalIn 0.2s ease">
+                <div style="padding:1.5rem 2rem;text-align:center">
+                    <div style="width:56px;height:56px;border-radius:50%;background:var(--primary-color)15;display:inline-flex;align-items:center;justify-content:center;margin-bottom:1rem">
+                        <i class="fas fa-cloud-download-alt" style="font-size:1.5rem;color:var(--primary-color)"></i>
+                    </div>
+                    <h3 style="margin:0 0 0.5rem;font-size:1.125rem;color:var(--text-primary)">${t('confirm.update.title')} v${updateInfo.latest}</h3>
+                    ${releaseNotes ? `<div style="max-height:120px;overflow-y:auto;text-align:left;padding:0.75rem;margin:0.75rem 0;background:var(--bg-tertiary);border-radius:var(--radius-lg,10px);border:1px solid var(--border-color);font-size:0.8rem;color:var(--text-secondary);line-height:1.5;white-space:pre-wrap">${releaseNotes}</div>` : ''}
+                    <p style="margin:0.75rem 0 0.5rem;color:var(--text-secondary);font-size:0.85rem">${t('confirm.update.message')}</p>
+                    <div style="display:flex;align-items:center;background:var(--bg-tertiary);border-radius:var(--radius-lg,10px);padding:0.6rem 1rem;margin:0.5rem 0;border:1px solid var(--border-color)">
+                        <code style="flex:1;font-size:0.8rem;color:var(--text-primary);font-family:monospace;word-break:break-all">${updateCmd}</code>
+                        <button class="update-copy-btn" style="flex-shrink:0;margin-left:0.5rem;background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:0.25rem;border-radius:4px;transition:all 0.2s" title="${t('toast.copied')}">
+                            <i class="fas fa-copy" style="font-size:0.9rem"></i>
+                        </button>
+                    </div>
+                </div>
+                <div style="display:flex;gap:0.75rem;padding:0 2rem 1.5rem;justify-content:center">
+                    <button class="update-close-btn" style="flex:1;padding:0.625rem 1.25rem;border-radius:var(--radius-lg,10px);border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;font-size:0.875rem;font-weight:500;transition:all 0.2s">${t('confirm.cancel')}</button>
+                </div>
+            </div>
+        `;
+
+        const close = () => {
+            overlay.style.opacity = '0';
+            setTimeout(() => overlay.remove(), 200);
+        };
+
+        overlay.querySelector('.update-copy-btn').onclick = async () => {
             try {
                 await navigator.clipboard.writeText(updateCmd);
             } catch (e) {
@@ -669,8 +693,16 @@ async function handleCheckUpdate() {
                 document.execCommand('copy');
                 document.body.removeChild(ta);
             }
+            const icon = overlay.querySelector('.update-copy-btn i');
+            icon.className = 'fas fa-check';
+            setTimeout(() => { icon.className = 'fas fa-copy'; }, 1500);
             showToast(t('toast.copied'), 'success');
-        }
+        };
+
+        overlay.querySelector('.update-close-btn').onclick = close;
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        document.body.appendChild(overlay);
     } else {
         // Check for update
         btn.disabled = true;
