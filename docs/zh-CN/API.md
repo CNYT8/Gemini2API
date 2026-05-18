@@ -708,7 +708,7 @@ curl -X POST http://localhost:5918/admin/settings \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk-你的API密钥" \
   -d '{
-    "rotation_strategy": "least-used",
+    "rotation_strategy": "failover",
     "max_concurrent_per_account": 5
   }'
 ```

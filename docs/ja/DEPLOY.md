@@ -89,7 +89,7 @@ MAX_CONCURRENT_PER_ACCOUNT=3
 | `PORT` | サービスポート | 5918 |
 | `REFRESH_INTERVAL` | Cookie 更新間隔（分） | 5 |
 | `MAX_RETRIES` | 失敗時の再試行回数 | 3 |
-| `ROTATION_STRATEGY` | 負荷分散戦略（round-robin/least-used） | round-robin |
+| `ROTATION_STRATEGY` | 負荷分散戦略（round-robin/failover） | round-robin |
 | `MAX_CONCURRENT_PER_ACCOUNT` | アカウント当たりの最大並行数 | 3 |
 
 > **注意**: 値に引用符は不要です。余分なスペースや改行がないことを確認してください。
@@ -350,7 +350,7 @@ API_KEY=sk-生成されたキーを使用
 REFRESH_INTERVAL=10
 MAX_RETRIES=5
 MAX_CONCURRENT_PER_ACCOUNT=5
-ROTATION_STRATEGY=least-used
+ROTATION_STRATEGY=failover
 
 # 監視
 LOG_LEVEL=info

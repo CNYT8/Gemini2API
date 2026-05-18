@@ -83,7 +83,7 @@
 
 ### 🔄 多账号轮询与 Cookie 自愈
 
-- **多账号负载均衡**：支持 round-robin（轮询）和 least-used（最少使用）两种策略
+- **多账号负载均衡**：支持 round-robin（轮询）和 failover（故障转移）两种策略
 - 每账号独立并发控制，避免单账号过载
 - 连续失败自动标记不健康，自动跳过故障账号
 - 后台自动轮换 Cookie，无感续期
@@ -422,7 +422,7 @@ response = client.chat.completions.create(
 | `RATE_LIMIT_MAX` | ❌ | `10` | 窗口内最大请求数 |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | 启用定时账号状态检测 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
-| `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `least-used`（最少使用） |
+| `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `failover`（故障转移） |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每账号最大并发请求数 |
 
 ---

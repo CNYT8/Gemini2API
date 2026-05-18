@@ -123,11 +123,11 @@ docker compose logs -f
 
 **負載均衡策略：**
 - `round-robin`（預設）：均勻分配請求到各帳號
-- `least-used`：路由到活躍請求最少的帳號
+- `failover`（故障轉移）：持續使用第一個可用帳號，直到失敗後切換到下一個
 
 在 `.env` 中更改策略：
 ```env
-ROTATION_STRATEGY=least-used
+ROTATION_STRATEGY=failover
 ```
 
 ### 動態帳號管理
@@ -305,7 +305,7 @@ kill -9 <PID>
 | `MAX_RETRIES` | 3 | 失敗請求重試次數 |
 | `PORT` | 5918 | 服務連接埠 |
 | `LOG_LEVEL` | info | 日誌級別（debug/info/warning/error） |
-| `ROTATION_STRATEGY` | round-robin | 負載均衡：round-robin 或 least-used |
+| `ROTATION_STRATEGY` | round-robin | 負載均衡：round-robin 或 failover |
 | `MAX_CONCURRENT_PER_ACCOUNT` | 3 | 每帳號最大並發請求數 |
 | `HEALTH_CHECK_ENABLED` | true | 啟用定期帳號健康檢查 |
 | `HEALTH_CHECK_INTERVAL` | 5 | 健康檢查間隔（分鐘） |

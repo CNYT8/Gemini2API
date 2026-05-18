@@ -326,7 +326,7 @@ curl -X PUT http://localhost:5918/admin/accounts/account-0/cookies \
 ## Performance Tips
 
 1. **Use Multiple Accounts**: Distribute load across 2-3 accounts for better throughput
-2. **Enable Least-Used Strategy**: Set `ROTATION_STRATEGY=least-used` for better load balancing
+2. **Enable Failover Strategy**: Set `ROTATION_STRATEGY=failover` for automatic failover when an account fails
 3. **Adjust Concurrency**: Increase `MAX_CONCURRENT_PER_ACCOUNT` if you have spare resources
 4. **Use Flash Models**: `gemini-2.5-flash` is faster than `gemini-2.5-pro` for most tasks
 5. **Enable Caching**: Use conversation IDs to maintain context without resending history

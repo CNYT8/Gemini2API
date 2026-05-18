@@ -83,7 +83,7 @@
 
 ### 🔄 다중 계정 로테이션 및 쿠키 자가 치유
 
-- **다중 계정 로드 밸런싱**: round-robin(순환) 및 least-used(최소 사용) 두 가지 전략 지원
+- **다중 계정 로드 밸런싱**: round-robin(순환) 및 failover(장애 조치) 두 가지 전략 지원
 - 계정별 독립적인 동시성 제어로 단일 계정 과부하 방지
 - 연속 실패 시 자동으로 비정상 표시, 장애 계정 자동 건너뛰기
 - 백그라운드 자동 쿠키 로테이션, 무감각 갱신
@@ -332,7 +332,7 @@ print(msg.content[0].text)
 | `MAX_RETRIES` | ❌ | `3` | 실패 재시도 횟수(지수 백오프) |
 | `PORT` | ❌ | `5918` | 서비스 포트 |
 | `LOG_LEVEL` | ❌ | `info` | 로그 레벨(debug/info/warning/error) |
-| `ROTATION_STRATEGY` | ❌ | `round-robin` | 로테이션 전략: `round-robin`(순환) / `least-used`(최소 사용) |
+| `ROTATION_STRATEGY` | ❌ | `round-robin` | 로테이션 전략: `round-robin`(순환) / `failover`(장애 조치) |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 계정당 최대 동시 요청 수 |
 
 전체 구성 목록은 메인 README를 참조하십시오.

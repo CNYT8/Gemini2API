@@ -123,11 +123,11 @@ When `accounts.json` exists, the service uses it instead of `.env` credentials. 
 
 **Load Balancing Strategies:**
 - `round-robin` (default): Distributes requests evenly across accounts
-- `least-used`: Routes to the account with fewest active requests
+- `failover`: Uses the first available account until it fails, then switches to the next
 
 Change strategy in `.env`:
 ```env
-ROTATION_STRATEGY=least-used
+ROTATION_STRATEGY=failover
 ```
 
 ### Dynamic Account Management
@@ -305,7 +305,7 @@ kill -9 <PID>
 | `MAX_RETRIES` | 3 | Failed request retry attempts |
 | `PORT` | 5918 | Service port |
 | `LOG_LEVEL` | info | Logging level (debug/info/warning/error) |
-| `ROTATION_STRATEGY` | round-robin | Load balancing: round-robin or least-used |
+| `ROTATION_STRATEGY` | round-robin | Load balancing: round-robin or failover |
 | `MAX_CONCURRENT_PER_ACCOUNT` | 3 | Max concurrent requests per account |
 | `HEALTH_CHECK_ENABLED` | true | Enable periodic account health checks |
 | `HEALTH_CHECK_INTERVAL` | 5 | Health check interval (minutes) |

@@ -90,7 +90,7 @@
 
 ### 🔄 多账号轮询与 Cookie 自愈
 
-- **多账号负载均衡**：支持 round-robin（轮询）和 least-used（最少使用）两种策略
+- **多账号负载均衡**：支持 round-robin（轮询）和 failover（故障转移）两种策略
 - 每账号独立并发控制，避免单账号过载
 - 连续失败自动标记不健康，自动跳过故障账号
 - 后台自动轮换 Cookie，无感续期
@@ -550,7 +550,7 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | 启用定时账号状态检测 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
 | `ACCOUNTS_FILE` | ❌ | `accounts.json` | 多账号配置文件路径（不存在则使用环境变量单账号模式） |
-| `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `least-used`（最少使用） |
+| `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `failover`（故障转移） |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每账号最大并发请求数 |
 | `FINGERPRINT_CONFIG_PATH` | ❌ | `data/fingerprint.json` | 指纹配置文件路径 |
 | `VERSION_SYNC_ENABLED` | ❌ | `true` | 启用 Chrome 版本自动同步 |

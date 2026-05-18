@@ -112,7 +112,7 @@ RATE_LIMIT_MAX=10
 HEALTH_CHECK_ENABLED=true
 HEALTH_CHECK_INTERVAL=5
 
-# 可选：轮询策略（round-robin/least-used，默认 round-robin）
+# 可选：轮询策略（round-robin/failover，默认 round-robin）
 ROTATION_STRATEGY=round-robin
 
 # 可选：每账号最大并发数（默认 3）
@@ -421,8 +421,8 @@ MAX_CONCURRENT_PER_ACCOUNT=5
 
 ```env
 # round-robin: 轮询分配（默认）
-# least-used: 分配给请求最少的账号
-ROTATION_STRATEGY=least-used
+# failover: 故障转移，一个账号持续使用直到失败才切换
+ROTATION_STRATEGY=failover
 ```
 
 ### 启用限流

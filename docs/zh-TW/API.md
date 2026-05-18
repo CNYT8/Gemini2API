@@ -539,7 +539,7 @@ curl http://localhost:5918/admin/settings \
 ```json
 {
   "max_concurrent_per_account": 5,
-  "rotation_strategy": "least-used",
+  "rotation_strategy": "failover",
   "rate_limit_enabled": true
 }
 ```

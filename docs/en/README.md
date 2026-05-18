@@ -83,7 +83,7 @@
 
 ### 🔄 Multi-Account Load Balancing & Cookie Self-Healing
 
-- **Multi-account load balancing**: Supports round-robin and least-used strategies
+- **Multi-account load balancing**: Supports round-robin and failover strategies
 - Per-account concurrency control prevents single account overload
 - Automatic health marking for failed accounts, auto-skip unhealthy ones
 - Background cookie rotation for seamless renewal
@@ -422,7 +422,7 @@ response = client.chat.completions.create(
 | `RATE_LIMIT_MAX` | ❌ | `10` | Max requests per window |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | Enable scheduled account health checks |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | Check interval (minutes) |
-| `ROTATION_STRATEGY` | ❌ | `round-robin` | Rotation strategy: `round-robin` / `least-used` |
+| `ROTATION_STRATEGY` | ❌ | `round-robin` | Rotation strategy: `round-robin` / `failover` |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | Max concurrent requests per account |
 
 ---

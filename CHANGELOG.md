@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- 新增 failover（故障转移）策略：一个账号持续使用直到失败才自动切换下一个
 - 模型选择通过 `x-goog-ext-525001261-jspb` header 实现真正切换，支持 gemini-3 全系列
 - 旧版模型名别名兼容（gemini-2.5-pro → gemini-3-pro-plus 等）
 - 新增思考模式：`gemini-2.5-flash-thinking`、`gemini-2.0-flash-thinking`
@@ -22,6 +23,7 @@
 - 模型测试 textarea 添加快捷键提示（Enter 发送，Shift+Enter 换行）
 
 ### Fixed
+- 移除无意义的 least-used 策略（Gemini Web 无法获取真实用量）
 - 模型列表统一为用户友好名称（gemini-2.5-xxx），不再暴露内部 gemini-3 名称
 - 响应中 model 字段返回用户请求的原始模型名
 - Playground 模型下拉框从统一别名列表加载，不再使用页面缓存的旧模型名

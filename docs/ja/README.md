@@ -422,7 +422,7 @@ response = client.chat.completions.create(
 | `RATE_LIMIT_MAX` | ❌ | `10` | ウィンドウ内の最大リクエスト数 |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | スケジュール済みアカウントヘルスチェックを有効化 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | チェック間隔（分） |
-| `ROTATION_STRATEGY` | ❌ | `round-robin` | ローテーション戦略：`round-robin` / `least-used` |
+| `ROTATION_STRATEGY` | ❌ | `round-robin` | ローテーション戦略：`round-robin` / `failover` |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | アカウントあたりの最大並行リクエスト数 |
 
 ---

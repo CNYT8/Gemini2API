@@ -83,7 +83,7 @@
 
 ### 🔄 多帳號輪詢與 Cookie 自癒
 
-- **多帳號負載均衡**：支援 round-robin（輪詢）和 least-used（最少使用）兩種策略
+- **多帳號負載均衡**：支援 round-robin（輪詢）和 failover（故障轉移）兩種策略
 - 每帳號獨立並行控制，避免單帳號過載
 - 連續失敗自動標記不健康，自動跳過故障帳號
 - 後台自動輪換 Cookie，無感續期
@@ -422,7 +422,7 @@ response = client.chat.completions.create(
 | `RATE_LIMIT_MAX` | ❌ | `10` | 視窗內最大請求數 |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | 啟用定時帳號狀態檢測 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 檢測間隔（分鐘） |
-| `ROTATION_STRATEGY` | ❌ | `round-robin` | 輪詢策略：`round-robin`（輪詢）/ `least-used`（最少使用） |
+| `ROTATION_STRATEGY` | ❌ | `round-robin` | 輪詢策略：`round-robin`（輪詢）/ `failover`（故障轉移） |
 | `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每帳號最大並行請求數 |
 
 ---
