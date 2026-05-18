@@ -240,37 +240,29 @@ async def check_update():
 
 @router.post("/update")
 async def perform_update():
-    """Perform one-click update: git pull + rebuild + restart"""
+    """Perform one-click update via host update script"""
     import subprocess
     import threading
 
     def _update():
         time.sleep(0.5)
         try:
-            repo_path = "/app/repo"
-            # Mark repo as safe
-            subprocess.run(
-                ["git", "config", "--global", "--add", "safe.directory", repo_path],
-                capture_output=True, timeout=5
-            )
-            # Git fetch + reset (force overwrite local changes)
-            subprocess.run(
-                ["git", "-C", repo_path, "fetch", "origin", "main"],
-                capture_output=True, text=True, timeout=60
-            )
+            # Execute update.sh on host via docker run with host PID namespace
             result = subprocess.run(
-                ["git", "-C", repo_path, "reset", "--hard", "origin/main"],
-                capture_output=True, text=True, timeout=30
-            )
-            logger.info(f"Git update: {result.stdout.strip()}")
-
-            # Rebuild and restart via docker socket
-            logger.info("Starting docker compose rebuild...")
-            build_result = subprocess.run(
-                ["docker", "compose", "-p", "gemini2api", "-f", f"{repo_path}/docker-compose.yml", "up", "-d", "--build"],
+                ["docker", "run", "--rm", "--privileged",
+                 "--pid=host",
+                 "-v", "/home/ubuntu/gemini2api:/workspace",
+                 "-v", "/var/run/docker.sock:/var/run/docker.sock",
+                 "-v", "/usr/bin/docker:/usr/bin/docker",
+                 "alpine:latest",
+                 "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--",
+                 "bash", "-c",
+                 "cd /home/ubuntu/gemini2api && git fetch origin main && git reset --hard origin/main && docker compose build --quiet && docker compose up -d"],
                 capture_output=True, text=True, timeout=300
             )
-            logger.info(f"Docker compose result: {build_result.stdout.strip()} {build_result.stderr.strip()}")
+            logger.info(f"Update result: {result.stdout.strip()}")
+            if result.returncode != 0:
+                logger.error(f"Update error: {result.stderr.strip()}")
         except Exception as e:
             logger.error(f"Update failed: {e}")
 
