@@ -24,6 +24,7 @@ class AccountStatus(str, Enum):
 class RotationStrategy(str, Enum):
     ROUND_ROBIN = "round-robin"
     LEAST_USED = "least-used"
+    FAILOVER = "failover"
 
 
 @dataclass
@@ -121,6 +122,8 @@ class AccountPool:
 
             if self._strategy == RotationStrategy.ROUND_ROBIN:
                 account = self._pick_round_robin(available)
+            elif self._strategy == RotationStrategy.FAILOVER:
+                account = self._pick_failover(available)
             else:
                 account = self._pick_least_used(available)
 
@@ -148,6 +151,12 @@ class AccountPool:
 
     def _pick_least_used(self, available: list[Account]) -> Account:
         return min(available, key=lambda a: (a.active_requests, a.request_count))
+
+    def _pick_failover(self, available: list[Account]) -> Account:
+        for a in self._accounts:
+            if a in available:
+                return a
+        return available[0]
 
     async def add_account(self, psid: str, psidts: str, label: str = "") -> Account:
         account_id = f"account-{len(self._accounts)}"

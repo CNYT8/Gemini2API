@@ -117,7 +117,7 @@ async function loadDashboard() {
         setText('stat-requests', formatNumber(totalRequests));
         setText('stat-models', formatNumber(modelsSet.size || accounts.reduce((s, a) => s + (a.models_count || 0), 0)));
 
-        const strategyMap = { 'round-robin': '轮询', 'least-used': '最少使用' };
+        const strategyMap = { 'round-robin': t('settings.strategy.roundRobin'), 'least-used': t('settings.strategy.leastUsed'), 'failover': t('settings.strategy.failover') };
         setText('info-strategy', strategyMap[data.strategy] || data.strategy);
         setText('info-concurrent', data.max_concurrent_per_account || '-');
         setText('info-total-accounts', accounts.length);

@@ -44,8 +44,9 @@ function getFieldLabel(key) {
 }
 
 const ROTATION_OPTIONS = [
-  { value: 'round-robin', label: '轮询' },
-  { value: 'least-used', label: '最少使用' }
+  { value: 'round-robin', labelKey: 'settings.strategy.roundRobin' },
+  { value: 'least-used', labelKey: 'settings.strategy.leastUsed' },
+  { value: 'failover', labelKey: 'settings.strategy.failover' }
 ];
 
 function createFieldInput(key, value) {
@@ -63,7 +64,7 @@ function createFieldInput(key, value) {
     const radios = ROTATION_OPTIONS.map(opt =>
       `<label class="radio-option">
         <input type="radio" name="rotation_strategy" data-key="${key}" value="${opt.value}" ${value === opt.value ? 'checked' : ''}>
-        <span>${opt.label}</span>
+        <span>${t(opt.labelKey)}</span>
       </label>`
     ).join('');
     return `<div class="radio-group">${radios}</div>`;
