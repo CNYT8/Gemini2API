@@ -475,6 +475,12 @@ PRs and Issues welcome.
 
 ---
 
+## 🙏 Acknowledgments
+
+Thanks to everyone who submitted bug reports, logs, compatibility feedback, and feature suggestions through [Issues](https://github.com/xwteam/gemini2api/issues). Your feedback directly drove the development of Cookie persistence, multi-account rotation, model selection, multi-language support, and the Web panel.
+
+---
+
 ## 📄 License
 
 This project uses [Non-Commercial License](../../LICENSE):

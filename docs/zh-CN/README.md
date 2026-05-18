@@ -475,6 +475,12 @@ response = client.chat.completions.create(
 
 ---
 
+## 🙏 致谢
+
+感谢所有在 [Issues](https://github.com/xwteam/gemini2api/issues) 里提交 bug 复现、日志、兼容性反馈和功能建议的用户。这些反馈直接推动了 Cookie 保活、多账号轮换、模型选择、多语言支持、Web 面板等核心能力的迭代。
+
+---
+
 ## 📄 许可协议
 
 本项目采用 [非商业许可 (Non-Commercial)](../../LICENSE)：

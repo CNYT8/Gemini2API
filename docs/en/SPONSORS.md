@@ -15,12 +15,6 @@ Gemini2API is an open-source project maintained primarily by an individual. If t
 
 ---
 
-## 🙏 Acknowledgments
-
-Thanks to all users who have submitted bug reproductions, logs, compatibility feedback, and feature suggestions in [Issues](https://github.com/xwteam/gemini2api/issues). This feedback has directly driven iterations of core capabilities like Cookie keep-alive, multi-account rotation, model selection, multi-language support, and the Web panel.
-
----
-
 ## 📢 Community Group
 
 Join the WeChat group for usage help, experience sharing, and new feature discussions. Scan the QR code at the top of the [repository homepage](README.md) to join.
