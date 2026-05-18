@@ -267,7 +267,7 @@ async def perform_update():
             # Rebuild and restart via docker socket
             logger.info("Starting docker compose rebuild...")
             build_result = subprocess.run(
-                ["docker", "compose", "-p", "gemini2api", "-f", f"{repo_path}/docker-compose.yml", "up", "-d", "--build", "--force-recreate"],
+                ["docker", "compose", "-p", "gemini2api", "-f", f"{repo_path}/docker-compose.yml", "up", "-d", "--build"],
                 capture_output=True, text=True, timeout=300
             )
             logger.info(f"Docker compose result: {build_result.stdout.strip()} {build_result.stderr.strip()}")
