@@ -265,14 +265,12 @@ async def perform_update():
             logger.info(f"Git update: {result.stdout.strip()}")
 
             # Rebuild and restart via docker socket
-            subprocess.run(
-                ["docker", "compose", "-f", f"{repo_path}/docker-compose.yml", "build", "--quiet"],
-                capture_output=True, timeout=300
+            logger.info("Starting docker compose rebuild...")
+            build_result = subprocess.run(
+                ["docker", "compose", "-p", "gemini2api", "-f", f"{repo_path}/docker-compose.yml", "up", "-d", "--build", "--force-recreate"],
+                capture_output=True, text=True, timeout=300
             )
-            subprocess.run(
-                ["docker", "compose", "-f", f"{repo_path}/docker-compose.yml", "up", "-d"],
-                capture_output=True, timeout=60
-            )
+            logger.info(f"Docker compose result: {build_result.stdout.strip()} {build_result.stderr.strip()}")
         except Exception as e:
             logger.error(f"Update failed: {e}")
 
