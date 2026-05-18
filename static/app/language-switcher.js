@@ -59,8 +59,21 @@ function bindEvents(switcher) {
 
             setLanguage(lang);
 
+            btn.querySelector('.current-lang').textContent = langInfo.short;
+
+            dropdown.querySelectorAll('.language-option').forEach(opt => {
+                opt.classList.remove('active');
+                opt.querySelector('.fa-check')?.remove();
+            });
+            option.classList.add('active');
+            option.insertAdjacentHTML('beforeend', ' <i class="fas fa-check"></i>');
+
             dropdown.classList.remove('show');
-            window.location.reload();
+
+            // 触发当前页面数据重新加载（无感刷新动态内容）
+            if (window.app && window.app.reloadCurrentSection) {
+                window.app.reloadCurrentSection();
+            }
         });
     });
 

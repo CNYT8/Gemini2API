@@ -771,7 +771,13 @@ window.app = {
     sendPlaygroundRequest,
     clearPlayground,
     copyModel,
-    openLightbox
+    openLightbox,
+    reloadCurrentSection() {
+        const activeSection = document.querySelector('.section.active');
+        if (activeSection) {
+            loadSectionData(activeSection.id);
+        }
+    }
 };
 
 // Wait for components to load, then initialize
