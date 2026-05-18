@@ -13,8 +13,6 @@ services:
       - ./api:/app/api
       - /etc/localtime:/etc/localtime:ro
       - /usr/share/zoneinfo/Asia/Shanghai:/usr/share/zoneinfo/Asia/Shanghai:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-      - .:/app/repo
     tmpfs:
       - /tmp
     healthcheck:

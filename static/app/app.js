@@ -649,43 +649,27 @@ async function handleCheckUpdate() {
     if (!btn) return;
 
     if (updateInfo && updateInfo.has_update) {
-        // Perform update
+        // Show update command dialog
+        const updateCmd = 'cd /home/ubuntu/gemini2api && git pull origin main && docker compose up -d --build';
         const confirmed = await showConfirm({
-            title: t('confirm.update.title'),
-            message: t('confirm.update.message'),
-            confirmText: t('confirm.update.btn'),
+            title: t('confirm.update.title') + ` v${updateInfo.latest}`,
+            message: t('confirm.update.message') + `\n\n${updateCmd}`,
+            confirmText: t('toast.copied'),
             cancelText: t('confirm.cancel'),
             type: 'warning'
         });
-        if (!confirmed) return;
-
-        btn.disabled = true;
-        const text = btn.querySelector('span');
-        if (text) text.textContent = t('dashboard.updating');
-
-        try {
-            await apiCall('POST', '/admin/update');
-            showToast(t('dashboard.updating'), 'success');
-
-            // Wait for service to restart
-            setTimeout(() => {
-                const check = setInterval(async () => {
-                    try {
-                        const resp = await fetch('/health');
-                        if (resp.ok) {
-                            clearInterval(check);
-                            window.location.reload();
-                        }
-                    } catch (e) {}
-                }, 2000);
-                setTimeout(() => {
-                    clearInterval(check);
-                    window.location.reload();
-                }, 60000);
-            }, 3000);
-        } catch (error) {
-            showToast(t('toast.error'), 'error');
-            btn.disabled = false;
+        if (confirmed) {
+            try {
+                await navigator.clipboard.writeText(updateCmd);
+            } catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = updateCmd;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            showToast(t('toast.copied'), 'success');
         }
     } else {
         // Check for update

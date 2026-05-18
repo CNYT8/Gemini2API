@@ -240,34 +240,12 @@ async def check_update():
 
 @router.post("/update")
 async def perform_update():
-    """Perform one-click update via host update script"""
-    import subprocess
-    import threading
-
-    def _update():
-        time.sleep(0.5)
-        try:
-            # Execute update.sh on host via docker run with host PID namespace
-            result = subprocess.run(
-                ["docker", "run", "--rm", "--privileged",
-                 "--pid=host",
-                 "-v", "/home/ubuntu/gemini2api:/workspace",
-                 "-v", "/var/run/docker.sock:/var/run/docker.sock",
-                 "-v", "/usr/bin/docker:/usr/bin/docker",
-                 "alpine:latest",
-                 "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--",
-                 "bash", "-c",
-                 "cd /home/ubuntu/gemini2api && git fetch origin main && git reset --hard origin/main && docker compose build --quiet && docker compose up -d"],
-                capture_output=True, text=True, timeout=300
-            )
-            logger.info(f"Update result: {result.stdout.strip()}")
-            if result.returncode != 0:
-                logger.error(f"Update error: {result.stderr.strip()}")
-        except Exception as e:
-            logger.error(f"Update failed: {e}")
-
-    threading.Thread(target=_update, daemon=True).start()
-    return {"status": "ok", "message": "Update started, service will restart shortly..."}
+    """Return update instructions"""
+    return {
+        "status": "ok",
+        "message": "Please run the following command on your server to update:",
+        "command": "cd /home/ubuntu/gemini2api && git pull origin main && docker compose up -d --build"
+    }
 
     threading.Thread(target=_update, daemon=True).start()
     return {"status": "ok", "message": "Update started, service will restart shortly..."}
