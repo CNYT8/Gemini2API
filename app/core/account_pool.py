@@ -117,6 +117,19 @@ class AccountPool:
                 and a.active_requests < self._max_concurrent
             ]
             if not available:
+                # 尝试恢复 EXPIRED 账号
+                for a in self._accounts:
+                    if a.status == AccountStatus.EXPIRED and a.client:
+                        try:
+                            result = await a.client.check_account()
+                            if result.get("valid"):
+                                a.status = AccountStatus.ACTIVE
+                                a.consecutive_failures = 0
+                                available.append(a)
+                                logger.info(f"Account {a.id} recovered during acquire")
+                        except Exception:
+                            pass
+            if not available:
                 raise RuntimeError("No available accounts")
 
             if self._strategy == RotationStrategy.ROUND_ROBIN:
