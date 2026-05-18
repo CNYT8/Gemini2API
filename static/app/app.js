@@ -307,7 +307,7 @@ async function loadAccounts() {
             <div class="account-card">
                 <div class="account-card-header">
                     <div>
-                        <h4>${account.label || '未命名账号'}</h4>
+                        <h4>${account.label || t('accounts.unnamed')}</h4>
                         <span class="text-muted">ID: ${account.id}</span>
                     </div>
                     ${getStatusBadge(account.status)}
@@ -317,15 +317,15 @@ async function loadAccounts() {
                     <span class="value">${maskString(account.psid || '', 12)}</span>
                 </div>
                 <div class="account-detail">
-                    <span class="label">请求数</span>
+                    <span class="label">${t('accounts.requests')}</span>
                     <span class="value">${formatNumber(account.request_count || 0)}</span>
                 </div>
                 <div class="account-detail">
-                    <span class="label">错误数</span>
+                    <span class="label">${t('accounts.errors')}</span>
                     <span class="value">${formatNumber(account.error_count || 0)}</span>
                 </div>
                 <div class="account-detail">
-                    <span class="label">模型</span>
+                    <span class="label">${t('accounts.models')}</span>
                     <span class="value">${(account.models || []).length || account.models_count || 0}</span>
                 </div>
                 <div class="account-actions">
