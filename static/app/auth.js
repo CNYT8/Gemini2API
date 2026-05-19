@@ -3,6 +3,26 @@
  */
 
 const TOKEN_KEY = 'gemini2api_token';
+const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+let _sessionTimer = null;
+
+function _resetSessionTimer() {
+    if (_sessionTimer) clearTimeout(_sessionTimer);
+    _sessionTimer = setTimeout(() => {
+        if (isAuthenticated()) {
+            clearToken();
+            window.location.href = '/login.html';
+        }
+    }, SESSION_TIMEOUT);
+}
+
+function _initSessionWatcher() {
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach(evt => {
+        document.addEventListener(evt, _resetSessionTimer, { passive: true });
+    });
+    _resetSessionTimer();
+}
 
 /**
  * 获取存储的token
@@ -116,6 +136,7 @@ async function initAuth() {
 
     try {
         await apiCall('GET', '/admin/verify');
+        _initSessionWatcher();
         return true;
     } catch (error) {
         clearToken();
