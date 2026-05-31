@@ -48,7 +48,7 @@
 > 建议搭配 Gemini Pro 及以上订阅使用，以获得更完整的模型访问权限和更稳定的体验。
 
 > [!IMPORTANT]
-> 由于 Google 风控策略限制，Cookie 会话目前约 2 小时后会被强制失效，暂未找到完美的长期保活方案。如果您在这方面有经验或思路，非常欢迎通过 [Issue](https://github.com/xwteam/gemini2api/issues) 或 PR 分享，期待社区的智慧。
+> 由于 Google 风控策略限制，Cookie 会话目前约 2 小时后会被强制失效，暂未找到完美的长期保活方案。一个思路是用**本地浏览器（住宅 IP）**自动刷新并回传 Cookie —— 配套的浏览器插件 [**gemini2api-plugin**](https://github.com/xwteam/gemini2api-plugin) 正在尝试这个方向。如果您在这方面有经验或思路，非常欢迎通过 [Issue](https://github.com/xwteam/gemini2api/issues) 或 PR 分享，期待社区的智慧。
 
 ---
 
@@ -298,6 +298,9 @@ gemini2api 内置 Cookie 自动轮换机制：每 5 分钟通过 Google RotateCo
 
 > [!NOTE]
 > Cookie 寿命受 Google 风控策略影响，数据中心 IP 通常可维持数小时。如 Cookie 频繁过期，建议使用住宅 IP 或增加账号数量做轮询。
+
+> [!TIP]
+> 配套浏览器插件 [**gemini2api-plugin**](https://github.com/xwteam/gemini2api-plugin)：装在你本地浏览器（住宅 IP），定时检测本服务的账号状态，过期时自动刷新本地 Gemini 页面、读取新 Cookie 回传给本服务，尝试突破数据中心 IP 的 2 小时限制。
 
 ### 3. 验证
 
