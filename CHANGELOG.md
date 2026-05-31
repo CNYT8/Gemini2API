@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+## [1.6.5] - 2026-05-31
+
+### Added
+- 🎨 AI 生成图片支持（基于 Gemini Web 的 Nano Banana / Imagen）：
+  - 新增 OpenAI 兼容图片接口 `POST /v1/images/generations`（+ `/openai/v1/...`），返回 b64_json
+  - 三家对话接口检测到生成图片时自动嵌入回复：OpenAI（markdown data URI）、Claude（image block）、Gemini（inlineData part）
+  - 靠 prompt 触发生图（不含生图意图时自动加 "Generate an image of" 前缀）
+  - 服务端带 cookie 代下载图片（lh3 多级 302 重定向，客户端直接访问会 403），转 base64 返回
+
 ## [1.6.4] - 2026-05-31
 
 ### Added

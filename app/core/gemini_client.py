@@ -664,12 +664,57 @@ class GeminiWebClient:
 
         if resp.status_code >= 400:
             raise HTTPStatusError(resp.status_code, resp.text[:200])
-        return self._parse_output(resp.text)
+
+        result = self._parse_output(resp.text)
+
+        # AI 生成图片：lh3 URL 客户端直接访问会 403，服务端带 cookie 代下载转 base64
+        if result.get("images"):
+            import base64 as _b64
+            downloaded = []
+            for img in result["images"]:
+                data = await self._download_generated_image(img["url"], cookies)
+                if data:
+                    downloaded.append({
+                        "b64": _b64.b64encode(data).decode(),
+                        "mime": img.get("mime", "image/png"),
+                        "width": img.get("width"),
+                        "height": img.get("height"),
+                    })
+                else:
+                    logger.warning(f"[imagegen] 下载失败: {img['url'][:60]}")
+            result["images"] = downloaded
+
+        return result
+
+    async def _download_generated_image(self, url: str, cookies: dict) -> bytes | None:
+        """下载 AI 生成的图片字节。
+        lh3 URL 会多级 302（lh3→fife→lh3），curl_cffi 默认跟随会在跨域时丢 cookie 致 403。
+        正确方式（实测）：先 allow_redirects=False 拿首个 302 的 location，
+        再对该 location 带 cookie allow_redirects=True 跟随到最终 PNG。
+        """
+        headers = {"Referer": "https://gemini.google.com/"}
+        try:
+            r1 = await self._http.get(url, cookies=cookies, headers=headers, allow_redirects=False)
+            loc = r1.headers.get("location", "")
+            if r1.status_code == 200 and r1.headers.get("content-type", "").startswith("image/"):
+                return r1.content  # 少数情况直接返回图
+            if not loc:
+                logger.warning(f"[imagegen] 无重定向且非图片: status={r1.status_code}")
+                return None
+            r2 = await self._http.get(loc, cookies=cookies, headers=headers, allow_redirects=True)
+            if r2.status_code == 200 and r2.headers.get("content-type", "").startswith("image/"):
+                return r2.content
+            logger.warning(f"[imagegen] 最终下载非图片: status={r2.status_code} type={r2.headers.get('content-type')}")
+            return None
+        except Exception as e:
+            logger.warning(f"[imagegen] 下载异常: {e}")
+            return None
 
     def _parse_output(self, raw: str) -> dict:
         lines = raw.strip().split("\n")
         text_content = ""
         conv_id = ""
+        images: list[dict] = []
 
         for line in lines:
             line = line.strip()
@@ -703,10 +748,56 @@ class GeminiWebClient:
                     parts = candidate[1]
                     if isinstance(parts, list) and parts and isinstance(parts[0], str):
                         text_content = parts[0]
+                # AI 生成图片：candidate[12][7][0] 是图片数组（实测确认）
+                imgs = self._extract_generated_images(candidate)
+                if imgs:
+                    images = imgs  # 生图是流式响应，用含图的最新帧
                 if payload[1]:
                     conv_id = str(payload[1])
 
-        return {"text": text_content, "conversation_id": conv_id}
+        return {"text": text_content, "conversation_id": conv_id, "images": images}
+
+    @staticmethod
+    def _extract_generated_images(candidate: list) -> list[dict]:
+        """从 candidate[12][7][0] 提取 AI 生成的图片（区别于用户上传的图）。
+        实测结构：每张图 img[0][3] = [null,1,文件名,URL,...,"image/png",...,[宽,高,size]]
+        返回 [{url, mime, width, height, filename}, ...]；无图返回 []。
+        """
+        try:
+            if not isinstance(candidate, list) or len(candidate) <= 12:
+                return []
+            c12 = candidate[12]
+            if not isinstance(c12, list) or len(c12) <= 7:
+                return []
+            arr = c12[7]
+            if not isinstance(arr, list) or not arr:
+                return []
+            img_list = arr[0]
+            if not isinstance(img_list, list):
+                return []
+            out = []
+            for img in img_list:
+                try:
+                    meta = img[0][3]  # [null,1,文件名,URL,...,mime,...,[w,h,size]]
+                    url = meta[3]
+                    if not isinstance(url, str) or not url.startswith("http"):
+                        continue
+                    filename = meta[2] if len(meta) > 2 and isinstance(meta[2], str) else "generated.png"
+                    mime = "image/png"
+                    width = height = None
+                    for el in meta:
+                        if isinstance(el, str) and el.startswith("image/"):
+                            mime = el
+                        elif isinstance(el, list) and len(el) >= 2 \
+                                and isinstance(el[0], int) and isinstance(el[1], int):
+                            width, height = el[0], el[1]
+                    out.append({"url": url, "mime": mime, "width": width,
+                                "height": height, "filename": filename})
+                except (IndexError, TypeError, KeyError):
+                    continue
+            return out
+        except (IndexError, TypeError, KeyError):
+            return []
 
     async def shutdown(self):
         if self._refresh_task:

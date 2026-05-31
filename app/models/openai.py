@@ -91,3 +91,23 @@ class ModelInfo(BaseModel):
 class ModelList(BaseModel):
     object: str = "list"
     data: list[ModelInfo]
+
+
+class ImageGenerationRequest(BaseModel):
+    prompt: str
+    model: str | None = "gemini-pro"
+    n: int = 1
+    size: str | None = None          # Gemini 固定尺寸，忽略；保留兼容
+    response_format: str = "b64_json"  # b64_json（默认，因 lh3 URL 客户端 403）| url
+    user: str | None = None
+
+
+class ImageData(BaseModel):
+    b64_json: str | None = None
+    url: str | None = None
+    revised_prompt: str | None = None
+
+
+class ImageResponse(BaseModel):
+    created: int = Field(default_factory=lambda: int(_time.time()))
+    data: list[ImageData]

@@ -16,6 +16,7 @@ from app.models.openai import (
     ChatRequest, ChatResponse, Choice, ChoiceMessage,
     StreamChunk, StreamChoice, StreamDelta,
     ModelList, ModelInfo, UsageInfo,
+    ImageGenerationRequest, ImageData, ImageResponse,
 )
 from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tokens
 from app.utils.prompt import build_prompt_from_messages, extract_attachments
@@ -116,6 +117,11 @@ async def chat_completions(req: ChatRequest, request: Request):
             )
 
     text = result.get("text", "")
+    # AI 生成图片：以 markdown data URI 形式嵌入回复（客户端可直接渲染）
+    gen_images = result.get("images") or []
+    if gen_images:
+        md = "\n".join(f"![generated image](data:{im['mime']};base64,{im['b64']})" for im in gen_images)
+        text = (text + "\n\n" + md) if text.strip() else md
     new_conv_id = result.get("conversation_id", "")
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
 
@@ -209,6 +215,10 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
             return
 
     text = result.get("text", "")
+    gen_images = result.get("images") or []
+    if gen_images:
+        md = "\n".join(f"![generated image](data:{im['mime']};base64,{im['b64']})" for im in gen_images)
+        text = (text + "\n\n" + md) if text.strip() else md
     new_conv_id = result.get("conversation_id", "")
 
     if new_conv_id and conv:
@@ -268,3 +278,49 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     )
     yield format_sse(done_chunk.model_dump())
     yield "data: [DONE]\n\n"
+
+
+# 触发生图的关键词（prompt 不含时自动加前缀）
+_GEN_KEYWORDS = ("generate", "draw", "create an image", "create a picture",
+                 "画", "生成", "绘制", "画一", "做一张", "做个图")
+
+
+@router.post("/images/generations")
+async def images_generations(req: ImageGenerationRequest):
+    """OpenAI 兼容的图片生成接口。靠 prompt 触发 Gemini Web 生图，
+    服务端代下载图片转 base64 返回（lh3 URL 客户端直接访问会 403）。"""
+    raw_prompt = (req.prompt or "").strip()
+    if not raw_prompt:
+        return JSONResponse(status_code=400,
+            content={"error": {"message": "prompt is required", "type": "invalid_request_error"}})
+
+    # 确保 prompt 含生图意图，否则加前缀
+    low = raw_prompt.lower()
+    if not any(k in low or k in raw_prompt for k in _GEN_KEYWORDS):
+        prompt = f"Generate an image of {raw_prompt}"
+    else:
+        prompt = raw_prompt
+
+    model = _resolve_model(req.model or "gemini-pro")
+    try:
+        result = await gemini_client.generate(prompt, req.model or "gemini-pro")
+    except (RuntimeError, ValueError) as e:
+        return JSONResponse(status_code=500,
+            content={"error": {"message": str(e), "type": "api_error"}})
+
+    images = result.get("images") or []
+    if not images:
+        return JSONResponse(status_code=502, content={"error": {
+            "message": "未生成图片。可能账号无生图权限（地区/年龄限制），或 prompt 未触发生图。",
+            "type": "image_generation_failed"}})
+
+    n = max(1, min(req.n or 1, len(images)))
+    fmt = (req.response_format or "b64_json").lower()
+    data = []
+    for img in images[:n]:
+        if fmt == "url":
+            # 无本地存储时降级为 data URI（保证可用）
+            data.append(ImageData(url=f"data:{img['mime']};base64,{img['b64']}"))
+        else:
+            data.append(ImageData(b64_json=img["b64"]))
+    return ImageResponse(data=data)

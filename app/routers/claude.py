@@ -115,10 +115,17 @@ async def create_message(req: ClaudeRequest):
             )
         text = parsed.get("content", text)
 
+    blocks = [ContentBlock(type="text", text=text)]
+    # AI 生成图片：作为 Claude 原生 image block 追加
+    for im in (result.get("images") or []):
+        blocks.append(ContentBlock(type="image", source={
+            "type": "base64", "media_type": im.get("mime", "image/png"), "data": im["b64"],
+        }))
+
     return ClaudeResponse(
         id=msg_id,
         model=req.model,
-        content=[ContentBlock(type="text", text=text)],
+        content=blocks,
         stop_reason="end_turn",
         usage=ClaudeUsage(
             input_tokens=estimate_tokens(prompt),

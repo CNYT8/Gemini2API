@@ -126,25 +126,25 @@ async def generate_content(model: str, req: GeminiRequest):
     prompt_tokens = estimate_tokens(prompt)
     completion_tokens = estimate_tokens(response_text)
 
-    gemini_response = GeminiResponse(
-        candidates=[
-            GeminiCandidate(
-                content=GeminiContent(
-                    parts=[GeminiPart(text=response_text)],
-                    role="model",
-                ),
-                finish_reason="STOP",
-                index=0,
-            )
-        ],
-        usage_metadata=GeminiUsageMetadata(
-            prompt_token_count=prompt_tokens,
-            candidates_token_count=completion_tokens,
-            total_token_count=prompt_tokens + completion_tokens,
-        ),
-    )
+    # parts：文本 + AI 生成图片（inlineData，Gemini 原生多模态输出格式）
+    parts = [{"text": response_text}]
+    for im in (result.get("images") or []):
+        parts.append({"inlineData": {"mimeType": im.get("mime", "image/png"), "data": im["b64"]}})
 
-    return JSONResponse(content=gemini_response.model_dump())
+    gemini_response = {
+        "candidates": [{
+            "content": {"parts": parts, "role": "model"},
+            "finishReason": "STOP",
+            "index": 0,
+        }],
+        "usageMetadata": {
+            "promptTokenCount": prompt_tokens,
+            "candidatesTokenCount": completion_tokens,
+            "totalTokenCount": prompt_tokens + completion_tokens,
+        },
+    }
+
+    return JSONResponse(content=gemini_response)
 
 
 @router.post("/models/{model}:streamGenerateContent")

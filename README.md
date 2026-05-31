@@ -58,6 +58,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-05-31 19:00:00 | v1.6.5 - 🎨 AI 生成图片：新增 OpenAI 兼容 `/v1/images/generations` 接口（返回 b64_json）；三家对话接口检测到生成图片自动嵌入回复（markdown / image block / inlineData） |
 | 2026-05-31 17:00:00 | v1.6.4 - 三家接口暴露标准裸路径（`/v1/chat/completions`、`/v1/messages`、`/v1beta/...`），主流 SDK 开箱即用；修复部署机制（compose 由 build 改 image，`docker compose pull` 真正生效） |
 | 2025-05-31 14:10:00 | v1.6.3 - 图片/文件上传支持（OpenAI/Claude/Gemini 多模态）；模型改用网页版真实数据 + 对外固定稳定名（gemini-pro/flash/flash-thinking）；重启不再丢 Cookie |
 | 2025-05-19 20:00:00 | v1.6.2 - 会话5分钟无操作自动过期登出 |
@@ -434,7 +435,8 @@ response = client.chat.completions.create(
 | 方法 | 端点 | 功能 |
 |------|------|------|
 | GET | `/models` | 可用模型列表 |
-| POST | `/chat/completions` | 对话补全（支持流式 + 工具调用） |
+| POST | `/chat/completions` | 对话补全（支持流式 + 工具调用 + 生图） |
+| POST | `/images/generations` | AI 生成图片（返回 b64_json） |
 
 ### Claude 兼容（`/claude/v1`；对话入口同时挂裸 `/v1`）
 
@@ -664,6 +666,7 @@ gemini2api/
 - [x] 对话上下文持久化
 - [x] GitHub Actions 自动构建镜像
 - [x] 图片/文件上传支持
+- [x] AI 生成图片（`/v1/images/generations` + 三家对话接口嵌图）
 
 ---
 

@@ -29,6 +29,7 @@ class ContentBlock(BaseModel):
     id: str | None = None
     name: str | None = None
     input: dict | None = None
+    source: dict | None = None  # type=image 时：{type:"base64",media_type,data}
 
 
 class ClaudeUsage(BaseModel):
