@@ -207,3 +207,44 @@
 [data-theme="dark"] .chat-message.user .chat-bubble {
     background: var(--primary-color);
 }
+
+/* 图片上传 */
+.pg-image-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.pg-img-thumb {
+    position: relative;
+    display: inline-block;
+}
+.pg-img-thumb img {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: var(--radius-md, 6px);
+    border: 1px solid var(--border-color);
+}
+.pg-img-del {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    line-height: 1;
+    border: none;
+    border-radius: 50%;
+    background: var(--danger-color);
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0;
+}
+.chat-img {
+    display: block;
+    max-width: 200px;
+    max-height: 200px;
+    margin-top: 0.5rem;
+    border-radius: var(--radius-md, 6px);
+}

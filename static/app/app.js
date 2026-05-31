@@ -480,13 +480,14 @@ async function submitUpdateCookie() {
 
 let _pgConversationId = '';
 let _pgMessages = [];
+let _pgImages = [];  // 待发送的图片 [{dataUrl, name}]
 
 async function sendPlaygroundRequest() {
     const message = document.getElementById('pg-message')?.value.trim();
     const model = document.getElementById('pg-model')?.value;
     const chatContainer = document.getElementById('pg-chat');
 
-    if (!message) {
+    if (!message && _pgImages.length === 0) {
         showToast('请输入消息内容', 'warning');
         return;
     }
@@ -494,13 +495,25 @@ async function sendPlaygroundRequest() {
     const placeholder = chatContainer?.querySelector('.chat-placeholder');
     if (placeholder) placeholder.remove();
 
-    _pgMessages.push({ role: 'user', content: message });
+    // 组装多模态 content：有图片时用数组格式，纯文本保持字符串
+    let userContent;
+    if (_pgImages.length > 0) {
+        userContent = [];
+        if (message) userContent.push({ type: 'text', text: message });
+        for (const img of _pgImages) {
+            userContent.push({ type: 'image_url', image_url: { url: img.dataUrl } });
+        }
+    } else {
+        userContent = message;
+    }
+    _pgMessages.push({ role: 'user', content: userContent });
 
+    const imgHtml = _pgImages.map(img => `<img src="${img.dataUrl}" class="chat-img" alt="${escapeHtml(img.name)}">`).join('');
     const userMsg = document.createElement('div');
     userMsg.className = 'chat-message user';
     userMsg.innerHTML = `
         <div class="chat-avatar"><i class="fas fa-user"></i></div>
-        <div class="chat-bubble">${escapeHtml(message)}</div>
+        <div class="chat-bubble">${escapeHtml(message)}${imgHtml}</div>
     `;
     chatContainer.appendChild(userMsg);
 
@@ -515,6 +528,8 @@ async function sendPlaygroundRequest() {
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
     document.getElementById('pg-message').value = '';
+    _pgImages = [];
+    _renderPgImagePreview();
 
     const token = localStorage.getItem('gemini2api_token');
     const reqBody = {
@@ -597,6 +612,34 @@ function clearPlayground() {
     if (message) message.value = '';
     _pgConversationId = '';
     _pgMessages = [];
+    _pgImages = [];
+    _renderPgImagePreview();
+}
+
+function _renderPgImagePreview() {
+    const box = document.getElementById('pg-image-preview');
+    if (!box) return;
+    box.innerHTML = _pgImages.map((img, i) =>
+        `<span class="pg-img-thumb"><img src="${img.dataUrl}" alt="${escapeHtml(img.name)}"><button type="button" class="pg-img-del" data-idx="${i}">&times;</button></span>`
+    ).join('');
+    box.querySelectorAll('.pg-img-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+            _pgImages.splice(parseInt(btn.dataset.idx), 1);
+            _renderPgImagePreview();
+        });
+    });
+}
+
+function _handlePgImageSelect(files) {
+    for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            _pgImages.push({ dataUrl: e.target.result, name: file.name });
+            _renderPgImagePreview();
+        };
+        reader.readAsDataURL(file);
+    }
 }
 
 // ============================================================================
@@ -794,6 +837,17 @@ function initEventListeners() {
     const pgClear = document.getElementById('pg-clear-btn');
     if (pgClear) {
         pgClear.addEventListener('click', clearPlayground);
+    }
+
+    // Playground image upload
+    const pgImageBtn = document.getElementById('pg-image-btn');
+    const pgImageInput = document.getElementById('pg-image-input');
+    if (pgImageBtn && pgImageInput) {
+        pgImageBtn.addEventListener('click', () => pgImageInput.click());
+        pgImageInput.addEventListener('change', (e) => {
+            _handlePgImageSelect(e.target.files);
+            e.target.value = '';
+        });
     }
 
     // Restart
