@@ -695,14 +695,17 @@ class GeminiWebClient:
         return result
 
     async def _download_generated_image(self, url: str, cookies: dict) -> bytes | None:
-        """下载 AI 生成的图片字节。
-        lh3 URL 会多级 302（lh3→fife→lh3），curl_cffi 默认跟随会在跨域时丢 cookie 致 403。
-        正确方式（实测）：先 allow_redirects=False 拿首个 302 的 location，
-        再对该 location 带 cookie allow_redirects=True 跟随到最终 PNG。
+        """下载 AI 生成的图片字节（全分辨率原图）。
+        - lh3 URL 不加尺寸后缀时只给压缩缩略图（如 512px）；加 `=s0` 拿原始全分辨率图（实测）。
+        - lh3 URL 会多级 302（lh3→fife→lh3），curl_cffi 默认跟随会在跨域时丢 cookie 致 403。
+          正确方式：先 allow_redirects=False 拿首个 302 的 location，
+          再对该 location 带 cookie allow_redirects=True 跟随到最终 PNG。
         """
+        # 加 =s0 取原始全分辨率（不重复加；URL 已带 = 尺寸参数则保留）
+        full_url = url if ("=s" in url.rsplit("/", 1)[-1] or "=w" in url.rsplit("/", 1)[-1]) else url + "=s0"
         headers = {"Referer": "https://gemini.google.com/"}
         try:
-            r1 = await self._http.get(url, cookies=cookies, headers=headers, allow_redirects=False)
+            r1 = await self._http.get(full_url, cookies=cookies, headers=headers, allow_redirects=False)
             loc = r1.headers.get("location", "")
             if r1.status_code == 200 and r1.headers.get("content-type", "").startswith("image/"):
                 return r1.content  # 少数情况直接返回图

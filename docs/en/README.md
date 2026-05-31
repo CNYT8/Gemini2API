@@ -58,6 +58,7 @@
 
 | Date | Update |
 |------|--------|
+| 2026-06-01 00:32:16 | v1.6.9 - 🖼️ Generated images now returned at full resolution: previously downloaded a compressed thumbnail (512px); now appends `=s0` to get the original size (e.g. 1408×768) |
 | 2026-06-01 00:18:01 | v1.6.8 - 🖼️ Image generation no longer returns the googleusercontent placeholder URL: this meaningless placeholder is now filtered out, so only the image itself is returned |
 | 2026-06-01 00:02:09 | v1.6.7 - 🖼️ Fixed model test in the control panel not showing images: generated images now render directly instead of being displayed as markdown text/URL |
 | 2026-05-31 23:41:15 | v1.6.6 - 🖼️ Local hosting for generated images: the chat APIs now return accessible local URLs (`/images/{id}`) for generated images instead of base64, so CLI/agent clients can render them properly (base64 doesn't display in these clients); images are auto-cleaned up periodically |
