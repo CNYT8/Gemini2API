@@ -58,6 +58,7 @@
 
 | 날짜 | 업데이트 내용 |
 |------|----------|
+| 2026-05-31 19:00:00 | v1.6.5 - 🎨 AI 이미지 생성: OpenAI 호환 /v1/images/generations 엔드포인트 신규 추가(b64_json 반환); 3대 대화 엔드포인트에서 생성된 이미지를 감지하면 자동으로 응답에 삽입(markdown / image block / inlineData) |
 | 2026-05-31 17:00:00 | v1.6.4 - 세 가지 API 모두 표준 베어 경로(/v1/chat/completions, /v1/messages, /v1beta/...) 노출, 주요 SDK 즉시 사용 가능; 배포 메커니즘 수정(docker-compose를 build에서 image로 변경하여 docker compose pull이 실제로 작동) |
 | 2026-05-31 14:10:00 | v1.6.3 - 이미지/파일 업로드 지원(OpenAI/Claude/Gemini 멀티모달); 모델을 웹 버전 실제 데이터로 변경 + 고정 안정 이름(gemini-pro/flash/flash-thinking); 재시작 시 Cookie 손실 없음 |
 | 2026-05-19 20:00:00 | v1.6.2 - 5분간 작업이 없으면 세션 자동 만료 및 로그아웃 |

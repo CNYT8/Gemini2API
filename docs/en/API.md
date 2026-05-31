@@ -200,6 +200,45 @@ curl -X POST http://localhost:5918/openai/v1/chat/completions \
   }'
 ```
 
+### POST /openai/v1/images/generations
+
+Generate images with AI. Triggered by a text `prompt`, returns the image in `b64_json` format. Also available at the bare path `POST /v1/images/generations`.
+
+**Request:**
+```bash
+curl -X POST http://localhost:5918/openai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-pro",
+    "prompt": "a cute cat",
+    "n": 1
+  }'
+```
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model` | string | Yes | Model ID (e.g., `gemini-pro`) |
+| `prompt` | string | Yes | Text description of the image to generate |
+| `n` | number | No | Number of images to generate (default: 1) |
+
+**Response:**
+```json
+{
+  "created": 1715970000,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAA..."
+    }
+  ]
+}
+```
+
+> [!NOTE]
+> The image is returned as a Base64-encoded string in `b64_json`. In addition, when the three chat APIs detect a generated image in a response, the image is automatically embedded into the reply (markdown for OpenAI, image block for Claude, `inlineData` for Gemini).
+
 ## Claude Compatible API
 
 These endpoints follow Anthropic Claude API format.

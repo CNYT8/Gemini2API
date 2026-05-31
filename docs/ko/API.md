@@ -207,6 +207,49 @@ curl http://localhost:5918/openai/v1/models \
 }
 ```
 
+### POST /openai/v1/images/generations
+
+OpenAI 호환 AI 이미지 생성 API입니다. `prompt`로 이미지 생성을 트리거하며, Base64로 인코딩된 이미지를 `b64_json` 형식으로 반환합니다.
+
+> 표준 베어 경로 `/v1/images/generations`로도 호출할 수 있습니다.
+
+**요청**:
+
+```bash
+curl -X POST http://localhost:5918/openai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-당신의키" \
+  -d '{
+    "model": "gemini-pro",
+    "prompt": "a cute cat",
+    "n": 1
+  }'
+```
+
+**요청 파라미터**:
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| `model` | string | ✅ | 모델 ID (예: gemini-pro) |
+| `prompt` | string | ✅ | 생성할 이미지를 설명하는 프롬프트 |
+| `n` | integer | ❌ | 생성할 이미지 개수 (기본값: 1) |
+
+**응답**:
+
+```json
+{
+  "created": 1234567890,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAA..."
+    }
+  ]
+}
+```
+
+> [!TIP]
+> 대화 엔드포인트(`/chat/completions`, `/messages`, `:generateContent`)에서 모델이 이미지를 생성하면, 생성된 이미지가 자동으로 응답에 삽입됩니다(markdown 이미지 / Claude image block / Gemini inlineData).
+
 ## Claude 호환 API
 
 ### POST /claude/v1/messages

@@ -58,6 +58,7 @@
 
 | 日付 | 更新内容 |
 |------|----------|
+| 2026-05-31 19:00:00 | v1.6.5 - 🎨 AI 画像生成：OpenAI 互換の /v1/images/generations エンドポイントを新規追加（b64_json 形式で返却）；3 つのチャット API は生成された画像を検出すると自動的に応答へ埋め込み（markdown / image block / inlineData） |
 | 2026-05-31 17:00:00 | v1.6.4 - 3 つの API すべてが標準ベアパス（/v1/chat/completions、/v1/messages、/v1beta/...）を公開、主要 SDK がそのまま利用可能；デプロイ機構を修正（docker-compose を build から image に変更し、docker compose pull が正しく機能） |
 | 2026-05-31 14:10:00 | v1.6.3 - 画像/ファイルアップロード対応（OpenAI/Claude/Gemini マルチモーダル）；モデルを Web 版実データに変更 + 固定の安定名（gemini-pro/flash/flash-thinking）；再起動時に Cookie が失われない |
 | 2026-05-19 20:00:00 | v1.6.2 - 5 分間操作がないとセッションが自動的に期限切れになりログアウト |

@@ -162,6 +162,49 @@ data: {"choices":[{"delta":{"content":"好"},"index":0}]}
 data: [DONE]
 ```
 
+### POST /images/generations
+
+AI 生成圖片。透過 `prompt` 觸發圖片生成，回傳 `b64_json` 格式的圖片資料。
+
+> 同時支援裸路徑 `POST /v1/images/generations` 與帶前綴路徑 `POST /openai/v1/images/generations`。
+
+**請求：**
+```bash
+curl -X POST http://localhost:5918/openai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{"model":"gemini-pro","prompt":"a cute cat","n":1}'
+```
+
+**請求體：**
+```json
+{
+  "model": "gemini-pro",
+  "prompt": "a cute cat",
+  "n": 1
+}
+```
+
+**參數說明：**
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `model` | string | ✅ | 模型名稱（如 gemini-pro） |
+| `prompt` | string | ✅ | 圖片描述提示詞 |
+| `n` | number | ❌ | 生成圖片數量（預設 1） |
+
+**回應：**
+```json
+{
+  "created": 1715970000,
+  "data": [
+    {"b64_json": "iVBORw0KGgoAAAANSUhEUgAA..."}
+  ]
+}
+```
+
+> **提示：** 三家對話介面（OpenAI/Claude/Gemini）在偵測到回應中含有生成圖片時，也會自動將圖片嵌入回覆（OpenAI 以 markdown 圖片語法、Claude 以 image block、Gemini 以 inlineData 形式）。
+
 ## Claude 相容 API（`/claude/v1`）
 
 ### GET /models

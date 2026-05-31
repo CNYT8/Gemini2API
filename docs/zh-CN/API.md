@@ -265,6 +265,47 @@ curl -X POST http://localhost:5918/openai/v1/chat/completions \
   }'
 ```
 
+### POST /openai/v1/images/generations
+
+AI 生成图片：靠 prompt 触发生成，返回 b64_json 格式的图片。也可使用裸路径 `/v1/images/generations`。
+
+**请求体**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `model` | string | 是 | 模型名称，如 `gemini-pro` |
+| `prompt` | string | 是 | 图片描述提示词 |
+| `n` | number | 否 | 生成图片数量，默认 1 |
+
+**请求示例**：
+
+```bash
+curl -X POST http://localhost:5918/openai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
+  -d '{
+    "model": "gemini-pro",
+    "prompt": "a cute cat",
+    "n": 1
+  }'
+```
+
+**响应**：
+
+```json
+{
+  "created": 1715970000,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAA..."
+    }
+  ]
+}
+```
+
+> [!TIP]
+> 三家对话接口（OpenAI / Claude / Gemini）检测到生成图片时，也会自动将图片嵌入回复中（OpenAI 用 markdown 图片语法、Claude 用 image block、Gemini 用 inlineData）。
+
 ## Claude 兼容 API
 
 ### GET /claude/v1/models

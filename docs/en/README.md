@@ -58,6 +58,7 @@
 
 | Date | Update |
 |------|--------|
+| 2026-05-31 19:00:00 | v1.6.5 - 🎨 AI image generation: added OpenAI-compatible `/v1/images/generations` endpoint (returns `b64_json`); all three chat APIs auto-embed generated images into replies (markdown / image block / inlineData) |
 | 2026-05-31 17:00:00 | v1.6.4 - All three APIs expose standard bare paths (/v1/chat/completions, /v1/messages, /v1beta/...) — major SDKs work out of the box; fixed deployment mechanism (docker-compose switched from build to image, so docker compose pull actually takes effect) |
 | 2026-05-31 14:10:00 | v1.6.3 - Image/file upload support (OpenAI/Claude/Gemini multimodal); models now use real web data + stable fixed names (gemini-pro/flash/flash-thinking); cookies no longer lost on restart |
 | 2026-05-19 20:00:00 | v1.6.2 - Session auto-expires and logs out after 5 minutes of inactivity |

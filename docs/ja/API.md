@@ -189,6 +189,48 @@ data: {"choices":[{"delta":{"content":"。"}}]}
 data: [DONE]
 ```
 
+### POST /openai/v1/images/generations
+
+AI 画像生成リクエストを送信します。`prompt` をトリガーとして画像を生成し、`b64_json` 形式で返却します。
+
+> **注**: 標準ベアパス `/v1/images/generations` でもアクセスできます。
+
+**リクエスト:**
+
+```bash
+curl -X POST http://localhost:5918/openai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-あなたのキー" \
+  -d '{
+    "model": "gemini-pro",
+    "prompt": "a cute cat",
+    "n": 1
+  }'
+```
+
+**リクエストパラメータ:**
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `model` | string | ✅ | モデル名（例: `gemini-pro`） |
+| `prompt` | string | ✅ | 画像生成用のプロンプト |
+| `n` | integer | ❌ | 生成する画像の枚数（デフォルト: 1） |
+
+**レスポンス:**
+
+```json
+{
+  "created": 1715970000,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+  ]
+}
+```
+
+> **ヒント**: 3 つのチャット API（OpenAI / Claude / Gemini）も応答内に生成された画像を検出すると、自動的に画像を埋め込みます（markdown / image block / inlineData）。
+
 ## Claude 互換 API
 
 Anthropic Claude SDK と互換性のあるエンドポイントです。
