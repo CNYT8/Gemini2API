@@ -60,6 +60,17 @@ async def lifespan(app: FastAPI):
 
     log_flush_task = asyncio.create_task(log_flush_loop())
 
+    async def image_cleanup_loop():
+        from app.core import image_store
+        while True:
+            try:
+                image_store.cleanup_old()
+            except Exception as e:
+                logger.warning(f"[image_store] 清理异常: {e}")
+            await asyncio.sleep(6 * 3600)  # 每 6 小时清一次过期生成图片
+
+    image_cleanup_task = asyncio.create_task(image_cleanup_loop())
+
     version_task = None
     if settings.version_sync_enabled:
         version_task = asyncio.create_task(version_sync_loop())
@@ -80,6 +91,11 @@ async def lifespan(app: FastAPI):
     log_flush_task.cancel()
     try:
         await log_flush_task
+    except asyncio.CancelledError:
+        pass
+    image_cleanup_task.cancel()
+    try:
+        await image_cleanup_task
     except asyncio.CancelledError:
         pass
     app.state.log_store.flush()
@@ -202,6 +218,16 @@ app.include_router(model_mapping_router.router)
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "gemini2api"}
+
+
+@app.get("/images/{image_id}")
+async def serve_generated_image(image_id: str):
+    """提供 AI 生成图片的访问（供对话接口返回可渲染 URL）。"""
+    from app.core import image_store
+    path = image_store.get_image_path(image_id)
+    if not path:
+        return JSONResponse(status_code=404, content={"error": "image not found"})
+    return FileResponse(path, media_type=image_store.content_type_for(image_id))
 
 
 @app.get("/login.html")

@@ -4,7 +4,7 @@ import json
 import logging
 from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.account_pool import account_pool as gemini_client
@@ -52,7 +52,7 @@ async def get_model(model_id: str):
 
 
 @router.post("/messages")
-async def create_message(req: ClaudeRequest):
+async def create_message(req: ClaudeRequest, request: Request):
     messages_raw = [m.model_dump() for m in req.messages]
     prompt = build_prompt_from_messages(messages_raw, system=req.system)
     attachments = extract_attachments(messages_raw)
@@ -116,11 +116,18 @@ async def create_message(req: ClaudeRequest):
         text = parsed.get("content", text)
 
     blocks = [ContentBlock(type="text", text=text)]
-    # AI 生成图片：作为 Claude 原生 image block 追加
+    # AI 生成图片：作为 Claude 原生 image block 追加。优先 url source（本地托管，
+    # 客户端可渲染），无 id 时降级 base64 source。
+    base = str(request.base_url).rstrip("/")
     for im in (result.get("images") or []):
-        blocks.append(ContentBlock(type="image", source={
-            "type": "base64", "media_type": im.get("mime", "image/png"), "data": im["b64"],
-        }))
+        if im.get("id") and base:
+            blocks.append(ContentBlock(type="image", source={
+                "type": "url", "url": f"{base}/images/{im['id']}",
+            }))
+        else:
+            blocks.append(ContentBlock(type="image", source={
+                "type": "base64", "media_type": im.get("mime", "image/png"), "data": im["b64"],
+            }))
 
     return ClaudeResponse(
         id=msg_id,

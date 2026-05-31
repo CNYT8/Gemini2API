@@ -2,7 +2,7 @@ import json
 import logging
 from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.account_pool import account_pool as gemini_client
@@ -89,7 +89,7 @@ async def list_models():
 
 
 @router.post("/models/{model}:generateContent")
-async def generate_content(model: str, req: GeminiRequest):
+async def generate_content(model: str, req: GeminiRequest, request: Request):
     """Generate content using Gemini API (non-streaming)."""
     if model.startswith("models/"):
         model = model[7:]
@@ -126,9 +126,18 @@ async def generate_content(model: str, req: GeminiRequest):
     prompt_tokens = estimate_tokens(prompt)
     completion_tokens = estimate_tokens(response_text)
 
-    # parts：文本 + AI 生成图片（inlineData，Gemini 原生多模态输出格式）
-    parts = [{"text": response_text}]
-    for im in (result.get("images") or []):
+    # parts：文本 + AI 生成图片。inlineData（Gemini 原生 base64）给能解析的客户端，
+    # 同时在文本里附本地托管 URL，方便不渲染 inlineData 的客户端拿到可点链接。
+    gen_images = result.get("images") or []
+    base = str(request.base_url).rstrip("/")
+    text_part = response_text
+    if gen_images and base:
+        urls = "\n".join(f"![generated image]({base}/images/{im['id']})"
+                         for im in gen_images if im.get("id"))
+        if urls:
+            text_part = (response_text + "\n\n" + urls) if response_text.strip() else urls
+    parts = [{"text": text_part}]
+    for im in gen_images:
         parts.append({"inlineData": {"mimeType": im.get("mime", "image/png"), "data": im["b64"]}})
 
     gemini_response = {

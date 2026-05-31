@@ -25,6 +25,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["OpenAI"])
 
 
+def _image_base(request) -> str:
+    """从请求推断中转站对外地址（不写死，适配任意部署）。"""
+    try:
+        base = str(request.base_url).rstrip("/")
+        return base
+    except Exception:
+        return ""
+
+
+def _images_to_markdown(images: list, request) -> str:
+    """生成图片转 markdown。优先用本地托管 URL（客户端可渲染），无 id 降级 data URI。"""
+    base = _image_base(request)
+    lines = []
+    for im in images:
+        if im.get("id") and base:
+            lines.append(f"![generated image]({base}/images/{im['id']})")
+        else:
+            lines.append(f"![generated image](data:{im['mime']};base64,{im['b64']})")
+    return "\n".join(lines)
+
+
 @router.get("/models")
 async def list_models(request: Request):
     models = list(gemini_client.models)
@@ -88,7 +109,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model, attachments),
+            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model, attachments, _image_base(request)),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -117,10 +138,10 @@ async def chat_completions(req: ChatRequest, request: Request):
             )
 
     text = result.get("text", "")
-    # AI 生成图片：以 markdown data URI 形式嵌入回复（客户端可直接渲染）
+    # AI 生成图片：嵌入回复，优先本地托管 URL（CLI 客户端能渲染，base64 不行）
     gen_images = result.get("images") or []
     if gen_images:
-        md = "\n".join(f"![generated image](data:{im['mime']};base64,{im['b64']})" for im in gen_images)
+        md = _images_to_markdown(gen_images, request)
         text = (text + "\n\n" + md) if text.strip() else md
     new_conv_id = result.get("conversation_id", "")
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
@@ -184,7 +205,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     )
 
 
-async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "", attachments=None) -> AsyncGenerator[str, None]:
+async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "", attachments=None, base_url: str = "") -> AsyncGenerator[str, None]:
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     model_name = display_model or model
 
@@ -217,7 +238,13 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     text = result.get("text", "")
     gen_images = result.get("images") or []
     if gen_images:
-        md = "\n".join(f"![generated image](data:{im['mime']};base64,{im['b64']})" for im in gen_images)
+        lines = []
+        for im in gen_images:
+            if im.get("id") and base_url:
+                lines.append(f"![generated image]({base_url}/images/{im['id']})")
+            else:
+                lines.append(f"![generated image](data:{im['mime']};base64,{im['b64']})")
+        md = "\n".join(lines)
         text = (text + "\n\n" + md) if text.strip() else md
     new_conv_id = result.get("conversation_id", "")
 

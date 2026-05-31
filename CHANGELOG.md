@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [1.6.6] - 2026-05-31
+
+### Added
+- 🖼️ 生成图片本地托管：对话接口的生图结果改为返回可访问的本地 URL（`/images/{id}`），CLI/agent 客户端（OpenClaw、Hermes 等）也能正常渲染显示，不再是无法显示的 base64
+  - OpenAI chat：markdown `![](http://host/images/xxx.png)`
+  - Claude messages：image block 用 `source.type=url`
+  - Gemini generateContent：inlineData 保留 + 文本附图片 URL
+  - `/v1/images/generations` 接口仍返回 b64_json（OpenAI 标准）
+- 图片存 `data/generated_images/`（bind-mount 持久），后台每 6 小时清理超过 7 天的旧图
+
 ## [1.6.5] - 2026-05-31
 
 ### Added

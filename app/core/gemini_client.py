@@ -667,21 +667,29 @@ class GeminiWebClient:
 
         result = self._parse_output(resp.text)
 
-        # AI 生成图片：lh3 URL 客户端直接访问会 403，服务端带 cookie 代下载转 base64
+        # AI 生成图片：lh3 URL 客户端直接访问会 403，服务端带 cookie 代下载，
+        # 同时存盘（供对话接口返回可渲染 URL）+ 转 base64（供 images/generations 接口）
         if result.get("images"):
             import base64 as _b64
+            from app.core import image_store
             downloaded = []
             for img in result["images"]:
                 data = await self._download_generated_image(img["url"], cookies)
-                if data:
-                    downloaded.append({
-                        "b64": _b64.b64encode(data).decode(),
-                        "mime": img.get("mime", "image/png"),
-                        "width": img.get("width"),
-                        "height": img.get("height"),
-                    })
-                else:
+                if not data:
                     logger.warning(f"[imagegen] 下载失败: {img['url'][:60]}")
+                    continue
+                mime = img.get("mime", "image/png")
+                entry = {
+                    "b64": _b64.b64encode(data).decode(),
+                    "mime": mime,
+                    "width": img.get("width"),
+                    "height": img.get("height"),
+                }
+                try:
+                    entry["id"] = image_store.save_image(data, mime)
+                except Exception as e:
+                    logger.warning(f"[imagegen] 存盘失败: {e}")
+                downloaded.append(entry)
             result["images"] = downloaded
 
         return result
