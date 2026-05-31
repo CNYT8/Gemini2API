@@ -261,23 +261,10 @@ class AccountPool:
 
     @property
     def models(self) -> list[str]:
-        from app.core.gemini_client import MODEL_ALIASES, GEMINI_MODELS
-        # 优先用活跃账号从网页版状态接口发现的真实可用模型
-        discovered = None
-        for a in self._accounts:
-            if a.status == AccountStatus.ACTIVE and a.client and a.client.models:
-                discovered = list(a.client.models)
-                break
-        if discovered:
-            # 按发现模型的 capacity 等级，补全同等级的 pro/flash/thinking 变体
-            caps = {GEMINI_MODELS[m]["capacity"] for m in discovered if m in GEMINI_MODELS}
-            full = set(discovered)
-            for name, info in GEMINI_MODELS.items():
-                if info["capacity"] in caps:
-                    full.add(name)
-            return sorted(full)
-        # 回退：暴露所有已知别名
-        return sorted(MODEL_ALIASES.keys())
+        # 对外永远是固定的公开模型名（API 稳定契约），
+        # 内部由 _resolve_model 按账号真实可用模型动态映射。
+        from app.core.gemini_client import PUBLIC_MODELS
+        return list(PUBLIC_MODELS)
 
     @property
     def is_healthy(self) -> bool:

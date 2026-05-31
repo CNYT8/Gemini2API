@@ -41,54 +41,75 @@ BATCHEXECUTE_URL = "https://gemini.google.com/_/BardChatUi/data/batchexecute"
 MODEL_HEADER_KEY = "x-goog-ext-525001261-jspb"
 
 GEMINI_MODELS = {
-    "gemini-3-pro": {"id": "9d8ca3786ebdfbea", "capacity": 1, "pro_only": False},
-    "gemini-3-flash": {"id": "fbb127bbb056c959", "capacity": 1, "pro_only": False},
-    "gemini-3-flash-thinking": {"id": "5bf011840784117a", "capacity": 1, "pro_only": False},
-    "gemini-3-pro-plus": {"id": "e6fa609c3fa255c0", "capacity": 4, "pro_only": True},
-    "gemini-3-flash-plus": {"id": "56fdd199312815e2", "capacity": 4, "pro_only": True},
-    "gemini-3-flash-thinking-plus": {"id": "e051ce1aa80aa576", "capacity": 4, "pro_only": True},
-    "gemini-3-pro-advanced": {"id": "e6fa609c3fa255c0", "capacity": 2, "pro_only": True},
-    "gemini-3-flash-advanced": {"id": "56fdd199312815e2", "capacity": 2, "pro_only": True},
-    "gemini-3-flash-thinking-advanced": {"id": "e051ce1aa80aa576", "capacity": 2, "pro_only": True},
+    "gemini-3-pro": {"id": "9d8ca3786ebdfbea", "capacity": 1, "pro_only": False, "family": "pro"},
+    "gemini-3-flash": {"id": "fbb127bbb056c959", "capacity": 1, "pro_only": False, "family": "flash"},
+    "gemini-3-flash-thinking": {"id": "5bf011840784117a", "capacity": 1, "pro_only": False, "family": "flash-thinking"},
+    "gemini-3-pro-plus": {"id": "e6fa609c3fa255c0", "capacity": 4, "pro_only": True, "family": "pro"},
+    "gemini-3-flash-plus": {"id": "56fdd199312815e2", "capacity": 4, "pro_only": True, "family": "flash"},
+    "gemini-3-flash-thinking-plus": {"id": "e051ce1aa80aa576", "capacity": 4, "pro_only": True, "family": "flash-thinking"},
+    "gemini-3-pro-advanced": {"id": "e6fa609c3fa255c0", "capacity": 2, "pro_only": True, "family": "pro"},
+    "gemini-3-flash-advanced": {"id": "56fdd199312815e2", "capacity": 2, "pro_only": True, "family": "flash"},
+    "gemini-3-flash-thinking-advanced": {"id": "e051ce1aa80aa576", "capacity": 2, "pro_only": True, "family": "flash-thinking"},
 }
 
+# 对外暴露的稳定模型名（永不变，API 契约）。客户端只认这 3 个，
+# 内部按账号当前真实可用的模型动态映射，账号订阅等级/Google 灰度怎么变都不影响 API。
+PUBLIC_MODELS = ["gemini-pro", "gemini-flash", "gemini-flash-thinking"]
+_PUBLIC_FAMILY = {
+    "gemini-pro": "pro",
+    "gemini-flash": "flash",
+    "gemini-flash-thinking": "flash-thinking",
+}
+# 每个 family 的默认内部模型（账号没拉到真实模型时的兜底，按基础版）
+_FAMILY_DEFAULT = {
+    "pro": "gemini-3-pro",
+    "flash": "gemini-3-flash",
+    "flash-thinking": "gemini-3-flash-thinking",
+}
+
+# 运行时由账号状态接口填充：family -> 该账号真实可用的内部模型名
+_RUNTIME_FAMILY_MODEL: dict[str, str] = {}
+
 MODEL_ALIASES = {
-    "gemini-2.5-pro": "gemini-3-pro-plus",
-    "gemini-2.5-flash": "gemini-3-flash-plus",
-    "gemini-2.5-flash-thinking": "gemini-3-flash-thinking-plus",
-    "gemini-2.5-pro-preview-05-06": "gemini-3-pro-plus",
-    "gemini-2.5-flash-preview-04-17": "gemini-3-flash-plus",
-    "gemini-2.5-flash-preview-05-20": "gemini-3-flash-plus",
-    "gemini-2.0-flash": "gemini-3-flash",
-    "gemini-2.0-flash-thinking": "gemini-3-flash-thinking",
-    "gemini-2.0-flash-lite": "gemini-3-flash",
-    "gemini-1.5-pro": "gemini-3-pro",
-    "gemini-1.5-flash": "gemini-3-flash",
-    "gemini-pro": "gemini-3-pro",
-    "gemini-flash": "gemini-3-flash",
+    # 旧版别名 → 公开名（再由公开名按账号动态解析），保留兼容
+    "gemini-2.5-pro": "gemini-pro",
+    "gemini-2.5-flash": "gemini-flash",
+    "gemini-2.5-flash-thinking": "gemini-flash-thinking",
+    "gemini-2.5-pro-preview-05-06": "gemini-pro",
+    "gemini-2.5-flash-preview-04-17": "gemini-flash",
+    "gemini-2.5-flash-preview-05-20": "gemini-flash",
+    "gemini-2.0-flash": "gemini-flash",
+    "gemini-2.0-flash-thinking": "gemini-flash-thinking",
+    "gemini-2.0-flash-lite": "gemini-flash",
+    "gemini-1.5-pro": "gemini-pro",
+    "gemini-1.5-flash": "gemini-flash",
 }
 
 KNOWN_MODELS = list(GEMINI_MODELS.keys())
 
 
 def _build_id_alias_map() -> dict[str, str]:
-    """内部 model_id -> 暴露给用户的友好别名。
-    优先用 MODEL_ALIASES 里指向该 id 的别名，没有就用 GEMINI_MODELS 的名字。
+    """内部 model_id -> 内部模型名（用于状态接口解析）。"""
+    return {info["id"]: name for name, info in GEMINI_MODELS.items()}
+
+
+
+def _resolve_model(model_name: str) -> str:
+    """把用户请求的模型名解析为账号当前真实可用的内部模型名。
+    1. 旧别名 → 公开名
+    2. 公开名（gemini-pro/flash/flash-thinking）→ 账号当前该 family 真实可用的内部模型
+       （运行时由状态接口填充 _RUNTIME_FAMILY_MODEL，没有则用 family 默认）
+    3. 已经是内部模型名（gemini-3-*）→ 原样
     """
-    # id -> 内部名
-    id_to_name = {info["id"]: name for name, info in GEMINI_MODELS.items()}
-    # 内部名 -> 友好别名（取第一个指向它的别名）
-    name_to_alias = {}
-    for alias, target in MODEL_ALIASES.items():
-        name_to_alias.setdefault(target, alias)
-    result = {}
-    for mid, name in id_to_name.items():
-        result[mid] = name_to_alias.get(name, name)
-    return result
+    name = MODEL_ALIASES.get(model_name, model_name)
+    if name in _PUBLIC_FAMILY:
+        family = _PUBLIC_FAMILY[name]
+        return _RUNTIME_FAMILY_MODEL.get(family) or _FAMILY_DEFAULT[family]
+    return name
 
 
 def _build_model_header(model_name: str) -> dict[str, str]:
-    resolved = MODEL_ALIASES.get(model_name, model_name)
+    resolved = _resolve_model(model_name)
     model_info = GEMINI_MODELS.get(resolved)
     if not model_info:
         return {}
@@ -97,10 +118,6 @@ def _build_model_header(model_name: str) -> dict[str, str]:
         "x-goog-ext-73010989-jspb": "[0]",
         "x-goog-ext-73010990-jspb": "[0]",
     }
-
-
-def _resolve_model(model_name: str) -> str:
-    return MODEL_ALIASES.get(model_name, model_name)
 
 
 MODELS_CACHE_FILE = Path("data/models_cache.json")
@@ -384,11 +401,9 @@ class GeminiWebClient:
 
             # 不再用正则从 HTML 抓模型（会抓到过时/不可用的脏数据）。
             # 真实可用模型由 _send_heartbeat 调 otAQ7b 状态接口解析。
-            # 这里仅用缓存或默认列表兜底，等状态接口刷新为准确值。
+            # 对外始终是固定公开名（API 稳定契约），状态接口只决定内部映射到哪个真实模型。
             if not self._available_models:
-                cached = _load_models_cache()
-                self._available_models = cached if cached else list(KNOWN_MODELS)
-                logger.info(f"Using {'cached' if cached else 'default'} model list ({len(self._available_models)})")
+                self._available_models = list(PUBLIC_MODELS)
         except Exception as e:
             msg = f"Token extraction failed: {e}"
             logger.error(msg)
@@ -487,10 +502,11 @@ class GeminiWebClient:
             return False
 
     def _parse_models_from_status(self, raw: str):
-        """从 otAQ7b（GetUserStatus）响应里解析账号真实可用的模型列表。
+        """从 otAQ7b（GetUserStatus）响应解析账号真实可用模型。
         响应结构：part_body[15] 是模型数组，每项 [model_id, display_name, description]。
-        把 model_id 映射回我们已知的 gemini-x 模型名，存入 _available_models（别名形式给前端）。
-        解析失败则不动现有列表（保底）。
+        把账号真实可用的内部模型按 family 记录到 _RUNTIME_FAMILY_MODEL，
+        供 _resolve_model 把固定公开名映射到账号真实模型。
+        _available_models 始终是固定的公开名（API 稳定契约），不随账号变化。
         """
         try:
             lines = raw.strip().split("\n")
@@ -519,17 +535,24 @@ class GeminiWebClient:
                     for m in models_list:
                         if isinstance(m, list) and m and isinstance(m[0], str):
                             discovered_ids.append(m[0])
-                    # 把内部 model_id 映射回我们暴露的别名
-                    id_to_alias = _build_id_alias_map()
-                    aliases = []
+                    # 内部 model_id -> 内部模型名 -> 按 family 记录账号真实可用模型
+                    id_to_name = _build_id_alias_map()
+                    family_model = {}
                     for mid in discovered_ids:
-                        alias = id_to_alias.get(mid)
-                        if alias and alias not in aliases:
-                            aliases.append(alias)
-                    if aliases:
-                        self._available_models = aliases
-                        _save_models_cache(aliases)
-                        logger.info(f"Discovered {len(aliases)} models from account status: {aliases}")
+                        name = id_to_name.get(mid)
+                        if name and name in GEMINI_MODELS:
+                            fam = GEMINI_MODELS[name]["family"]
+                            family_model.setdefault(fam, name)
+                    if family_model:
+                        # 账号拉到了 pro/flash，按同 capacity 等级补全 thinking
+                        caps = {GEMINI_MODELS[n]["capacity"] for n in family_model.values()}
+                        for name, info in GEMINI_MODELS.items():
+                            if info["capacity"] in caps:
+                                family_model.setdefault(info["family"], name)
+                        _RUNTIME_FAMILY_MODEL.update(family_model)
+                        # 对外永远是固定公开名
+                        self._available_models = list(PUBLIC_MODELS)
+                        logger.info(f"Account models resolved: {family_model} -> public {PUBLIC_MODELS}")
                         return
         except Exception as e:
             logger.debug(f"Model parse from status skipped: {e}")
@@ -583,7 +606,7 @@ class GeminiWebClient:
         if resolved not in GEMINI_MODELS:
             raise ValueError(
                 f"Model '{model}' unavailable. "
-                f"Options: {', '.join(KNOWN_MODELS)}"
+                f"Options: {', '.join(PUBLIC_MODELS)}"
             )
 
         last_err = None
