@@ -18,7 +18,7 @@ from app.models.openai import (
     ModelList, ModelInfo, UsageInfo,
 )
 from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tokens
-from app.utils.prompt import build_prompt_from_messages
+from app.utils.prompt import build_prompt_from_messages, extract_attachments
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/openai/v1", tags=["OpenAI"])
@@ -82,15 +82,18 @@ async def chat_completions(req: ChatRequest, request: Request):
         tools_raw = [t.model_dump() for t in req.tools]
         prompt = build_tool_prompt(prompt, tools_raw, req.tool_choice)
 
+    # 提取图片/文件附件（多模态），纯文本时为空列表
+    attachments = extract_attachments(messages_raw)
+
     if req.stream:
         return StreamingResponse(
-            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model),
+            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model, attachments),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     try:
-        result = await gemini_client.generate(prompt, resolved_model, gemini_conv_id)
+        result = await gemini_client.generate(prompt, resolved_model, gemini_conv_id, attachments)
     except (RuntimeError, ValueError) as e:
         # Fallback: 如果 conversation_id 过期，用完整 prompt 重试
         if gemini_conv_id:
@@ -175,17 +178,17 @@ async def chat_completions(req: ChatRequest, request: Request):
     )
 
 
-async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "") -> AsyncGenerator[str, None]:
+async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "", attachments=None) -> AsyncGenerator[str, None]:
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     model_name = display_model or model
 
     try:
-        result = await gemini_client.generate(prompt, model, gemini_conv_id)
+        result = await gemini_client.generate(prompt, model, gemini_conv_id, attachments)
     except Exception as e:
         if gemini_conv_id and messages_raw:
             full_prompt = build_prompt_from_messages(messages_raw)
             try:
-                result = await gemini_client.generate(full_prompt, model)
+                result = await gemini_client.generate(full_prompt, model, "", attachments)
             except Exception as e2:
                 error_chunk = StreamChunk(
                     id=completion_id,

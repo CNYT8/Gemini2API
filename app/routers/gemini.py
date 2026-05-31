@@ -25,6 +25,46 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gemini/v1beta")
 
 
+def _parse_system(system_instruction) -> str | None:
+    """system_instruction 可能是 str 或 GeminiContent，统一取文本。"""
+    if system_instruction is None:
+        return None
+    if isinstance(system_instruction, str):
+        return system_instruction or None
+    parts = getattr(system_instruction, "parts", None)
+    if parts:
+        texts = [p.text for p in parts if getattr(p, "text", None)]
+        if texts:
+            return " ".join(texts)
+    return None
+
+
+def _parse_contents(contents):
+    """从 Gemini contents 解析出 messages 和 attachments（inline_data）。"""
+    messages = []
+    attachments = []
+    idx = 0
+    for content in contents:
+        role = content.role
+        text_parts = [part.text for part in content.parts if part.text]
+        if text_parts:
+            messages.append({"role": role, "content": " ".join(text_parts)})
+        for part in content.parts:
+            inline = getattr(part, "inline_data", None)
+            if inline and isinstance(inline, dict):
+                import base64
+                mime = inline.get("mime_type") or inline.get("mimeType") or "image/png"
+                raw = inline.get("data", "")
+                try:
+                    data = base64.b64decode(raw) if isinstance(raw, str) else raw
+                except Exception:
+                    continue
+                ext = mime.split("/")[-1] if "/" in mime else "bin"
+                attachments.append({"data": data, "filename": f"image_{idx}.{ext}", "mime": mime})
+                idx += 1
+    return messages, attachments
+
+
 @router.get("/models")
 async def list_models():
     """List available Gemini models."""
@@ -54,39 +94,34 @@ async def generate_content(model: str, req: GeminiRequest):
     if model.startswith("models/"):
         model = model[7:]
 
-    messages = []
-    for content in req.contents:
-        role = content.role
-        text_parts = [part.text for part in content.parts if part.text]
-        if text_parts:
-            messages.append({"role": role, "content": " ".join(text_parts)})
+    messages, attachments = _parse_contents(req.contents)
+    system = _parse_system(req.system_instruction)
+    prompt = build_prompt_from_messages(messages, system=system)
 
-    system = None
-    if req.system_instruction:
-        system_parts = [part.text for part in req.system_instruction.parts if part.text]
-        if system_parts:
-            system = " ".join(system_parts)
-
-    tool_prompt = None
+    has_tools = False
     if req.tools:
         function_declarations = []
         for tool in req.tools:
             if tool.function_declarations:
-                function_declarations.extend(tool.function_declarations)
+                function_declarations.extend([fd.model_dump() for fd in tool.function_declarations])
         if function_declarations:
-            tool_prompt = build_tool_prompt(function_declarations)
+            has_tools = True
+            prompt = build_tool_prompt(prompt, function_declarations)
 
-    prompt = build_prompt_from_messages(messages, system=system, tool_prompt=tool_prompt)
+    try:
+        result = await gemini_client.generate(prompt, model, "", attachments)
+    except (RuntimeError, ValueError) as e:
+        return JSONResponse(
+            status_code=500 if "retry" in str(e).lower() else 400,
+            content={"error": {"message": str(e), "type": "api_error"}},
+        )
 
-    response_text = await gemini_client.generate(
-        model=model,
-        prompt=prompt,
-        temperature=req.generation_config.temperature if req.generation_config else None,
-        max_tokens=req.generation_config.max_output_tokens if req.generation_config else None,
-    )
+    response_text = result.get("text", "")
 
-    if tool_prompt:
-        response_text = parse_tool_response(response_text)
+    if has_tools:
+        parsed = parse_tool_response(response_text)
+        if isinstance(parsed, dict):
+            response_text = parsed.get("content", response_text)
 
     prompt_tokens = estimate_tokens(prompt)
     completion_tokens = estimate_tokens(response_text)
@@ -118,44 +153,36 @@ async def stream_generate_content(model: str, req: GeminiRequest):
     if model.startswith("models/"):
         model = model[7:]
 
-    messages = []
-    for content in req.contents:
-        role = content.role
-        text_parts = [part.text for part in content.parts if part.text]
-        if text_parts:
-            messages.append({"role": role, "content": " ".join(text_parts)})
+    messages, attachments = _parse_contents(req.contents)
+    system = _parse_system(req.system_instruction)
+    prompt = build_prompt_from_messages(messages, system=system)
 
-    system = None
-    if req.system_instruction:
-        system_parts = [part.text for part in req.system_instruction.parts if part.text]
-        if system_parts:
-            system = " ".join(system_parts)
-
-    tool_prompt = None
+    has_tools = False
     if req.tools:
         function_declarations = []
         for tool in req.tools:
             if tool.function_declarations:
-                function_declarations.extend(tool.function_declarations)
+                function_declarations.extend([fd.model_dump() for fd in tool.function_declarations])
         if function_declarations:
-            tool_prompt = build_tool_prompt(function_declarations)
-
-    prompt = build_prompt_from_messages(messages, system=system, tool_prompt=tool_prompt)
+            has_tools = True
+            prompt = build_tool_prompt(prompt, function_declarations)
 
     async def stream_generator() -> AsyncGenerator[str, None]:
-        response_text = await gemini_client.generate(
-            model=model,
-            prompt=prompt,
-            temperature=req.generation_config.temperature if req.generation_config else None,
-            max_tokens=req.generation_config.max_output_tokens if req.generation_config else None,
-        )
+        try:
+            result = await gemini_client.generate(prompt, model, "", attachments)
+        except (RuntimeError, ValueError) as e:
+            err = {"error": {"message": str(e), "type": "api_error"}}
+            yield json.dumps(err) + "\n"
+            return
 
-        if tool_prompt:
-            response_text = parse_tool_response(response_text)
+        response_text = result.get("text", "")
 
-        chunks = split_into_chunks(response_text)
+        if has_tools:
+            parsed = parse_tool_response(response_text)
+            if isinstance(parsed, dict):
+                response_text = parsed.get("content", response_text)
 
-        for chunk in chunks:
+        async for chunk in split_into_chunks(response_text):
             chunk_response = {
                 "candidates": [
                     {

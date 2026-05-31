@@ -243,11 +243,12 @@ class AccountPool:
             "accounts": accounts_info,
         }
 
-    async def generate(self, prompt: str, model: str, conversation_id: str = "") -> dict:
+    async def generate(self, prompt: str, model: str, conversation_id: str = "",
+                       attachments: list | None = None) -> dict:
         account = await self.acquire()
         t0 = time.time()
         try:
-            result = await account.client.generate(prompt, model, conversation_id)
+            result = await account.client.generate(prompt, model, conversation_id, attachments)
             latency_ms = (time.time() - t0) * 1000
             live_metrics.record_request(model, latency_ms)
             self.release(account, success=True)

@@ -6,6 +6,8 @@ class GeminiPart(BaseModel):
     text: str | None = None
     function_call: dict | None = None
     function_response: dict | None = None
+    inline_data: dict | None = None
+    file_data: dict | None = None
 
 
 class GeminiContent(BaseModel):
@@ -40,7 +42,7 @@ class GeminiRequest(BaseModel):
     tool_config: GeminiToolConfig | None = None
     generation_config: GenerationConfig | None = None
     safety_settings: list[dict] | None = None
-    system_instruction: str | None = None
+    system_instruction: GeminiContent | str | None = None
 
 
 class GeminiCandidate(BaseModel):
@@ -62,6 +64,7 @@ class GeminiResponse(BaseModel):
 class GeminiModelInfo(BaseModel):
     name: str
     display_name: str = ""
+    description: str = ""
     supported_generation_methods: list[str] = Field(
         default_factory=lambda: ["generateContent", "streamGenerateContent"]
     )

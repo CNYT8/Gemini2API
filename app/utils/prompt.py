@@ -1,4 +1,23 @@
-def build_prompt_from_messages(messages: list[dict], system: str | None = None) -> str:
+import base64
+import re
+
+_DATA_URI_RE = re.compile(r"^data:(?P<mime>[^;,]+)(?:;[^,]*)?;base64,(?P<b64>.+)$", re.DOTALL)
+
+_MIME_EXT = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/heic": "heic",
+    "image/heif": "heif",
+    "application/pdf": "pdf",
+    "text/plain": "txt",
+}
+
+
+def build_prompt_from_messages(messages: list[dict], system: str | None = None,
+                               tool_prompt: str | None = None) -> str:
     parts = []
     if system:
         parts.append(f"System: {system}")
@@ -26,4 +45,78 @@ def build_prompt_from_messages(messages: list[dict], system: str | None = None) 
         elif role == "tool":
             parts.append(f"Tool result: {content}")
 
+    if tool_prompt:
+        parts.append(tool_prompt)
+
     return "\n\n".join(parts)
+
+
+def _ext_for_mime(mime: str) -> str:
+    return _MIME_EXT.get((mime or "").lower(), "bin")
+
+
+def _parse_image_url(url: str, index: int) -> dict | None:
+    """把一个 image_url 解析成 attachment 描述。
+    data URI -> {data: bytes, filename, mime}
+    http(s)  -> {url, filename, mime}
+    其它忽略。
+    """
+    if not isinstance(url, str) or not url:
+        return None
+    m = _DATA_URI_RE.match(url.strip())
+    if m:
+        mime = m.group("mime").strip()
+        try:
+            data = base64.b64decode(m.group("b64"))
+        except Exception:
+            return None
+        return {"data": data, "filename": f"image_{index}.{_ext_for_mime(mime)}", "mime": mime}
+    if url.startswith("http://") or url.startswith("https://"):
+        return {"url": url, "filename": f"image_{index}", "mime": ""}
+    return None
+
+
+def extract_attachments(messages: list[dict]) -> list[dict]:
+    """从 messages 的 content 数组里提取图片/文件附件。
+    支持 OpenAI（image_url）和 Claude（image.source）两种格式。
+    返回 [{data|url, filename, mime}, ...]，无附件返回 []。
+    纯文本路径不受影响（content 为 str 时直接跳过）。
+    """
+    attachments: list[dict] = []
+    idx = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            # OpenAI: {"type":"image_url","image_url":{"url":...}}
+            if btype == "image_url":
+                url = block.get("image_url", {})
+                url = url.get("url") if isinstance(url, dict) else url
+                att = _parse_image_url(url, idx)
+                if att:
+                    attachments.append(att)
+                    idx += 1
+            # Claude: {"type":"image","source":{"type":"base64","media_type":...,"data":...}}
+            #         {"type":"image","source":{"type":"url","url":...}}
+            elif btype == "image":
+                src = block.get("source", {})
+                if not isinstance(src, dict):
+                    continue
+                if src.get("type") == "base64":
+                    mime = src.get("media_type", "image/png")
+                    try:
+                        data = base64.b64decode(src.get("data", ""))
+                    except Exception:
+                        continue
+                    attachments.append({"data": data, "filename": f"image_{idx}.{_ext_for_mime(mime)}", "mime": mime})
+                    idx += 1
+                elif src.get("type") == "url":
+                    att = _parse_image_url(src.get("url", ""), idx)
+                    if att:
+                        attachments.append(att)
+                        idx += 1
+    return attachments

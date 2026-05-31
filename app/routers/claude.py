@@ -14,7 +14,7 @@ from app.models.claude import (
     ClaudeModelInfo, ClaudeModelList,
 )
 from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tokens
-from app.utils.prompt import build_prompt_from_messages
+from app.utils.prompt import build_prompt_from_messages, extract_attachments
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/claude/v1", tags=["Claude"])
@@ -52,6 +52,7 @@ async def get_model(model_id: str):
 async def create_message(req: ClaudeRequest):
     messages_raw = [m.model_dump() for m in req.messages]
     prompt = build_prompt_from_messages(messages_raw, system=req.system)
+    attachments = extract_attachments(messages_raw)
 
     has_tools = bool(req.tools)
     if has_tools:
@@ -72,13 +73,13 @@ async def create_message(req: ClaudeRequest):
 
     if req.stream:
         return StreamingResponse(
-            _stream_claude(prompt, req.model, has_tools),
+            _stream_claude(prompt, req.model, has_tools, attachments),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     try:
-        result = await gemini_client.generate(prompt, req.model)
+        result = await gemini_client.generate(prompt, req.model, "", attachments)
     except (RuntimeError, ValueError) as e:
         return JSONResponse(
             status_code=500 if "retry" in str(e).lower() else 400,
@@ -131,11 +132,11 @@ async def count_tokens(req: ClaudeRequest):
     return {"input_tokens": count}
 
 
-async def _stream_claude(prompt: str, model: str, has_tools: bool) -> AsyncGenerator[str, None]:
+async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=None) -> AsyncGenerator[str, None]:
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
 
     try:
-        result = await gemini_client.generate(prompt, model)
+        result = await gemini_client.generate(prompt, model, "", attachments)
     except Exception as e:
         yield format_sse({"type": "error", "error": {"type": "api_error", "message": str(e)}})
         return

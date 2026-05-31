@@ -133,11 +133,27 @@ def _save_models_cache(models: list[str]):
         pass
 
 
+# 文件上传需要的 push_id；从 Gemini 页面 body 提取，抓不到用兜底值
+_DEFAULT_PUSH_ID = "feeds/mcudyrk2a4khkz"
+
+
+def _extract_push_id(body: str) -> str:
+    """从 Gemini 页面 HTML 里提取 push_id（上传文件用）。
+    常见形态为 feeds/<id>。抓不到回退到已知兜底值。
+    """
+    m = re.search(r'feeds/([a-zA-Z0-9_-]+)', body)
+    if m:
+        return f"feeds/{m.group(1)}"
+    return _DEFAULT_PUSH_ID
+
+
+
 class GeminiWebClient:
     def __init__(self, psid: str | None = None, psidts: str | None = None):
         self._psid = psid or settings.gemini_psid
         self._psidts = psidts or settings.gemini_psidts
         self._session_token: str = ""
+        self._push_id: str = ""
         self._available_models: list[str] = []
         self._lock = Lock()
         self._healthy = False
@@ -316,6 +332,7 @@ class GeminiWebClient:
             token_match = re.search(r'"SNlM0e":"([^"]+)"', body)
             if token_match:
                 self._session_token = token_match.group(1)
+                self._push_id = _extract_push_id(body)
                 logger.info("Session token acquired")
             else:
                 self._session_token = ""
@@ -450,13 +467,22 @@ class GeminiWebClient:
             except Exception as e:
                 logger.error(f"Refresh loop error: {e}")
 
-    def _encode_payload(self, prompt: str, model: str, conversation_id: str = "") -> str:
+    def _encode_payload(self, prompt: str, model: str, conversation_id: str = "",
+                        file_ids: list | None = None) -> str:
         conv_param = conversation_id if conversation_id else None
-        inner = json.dumps([[prompt], None, conv_param, model])
+        if file_ids:
+            # 有附件：第 0 位用带文件的 message_content 替换纯 [prompt]
+            file_data = [[[fid], fname] for fid, fname in file_ids]
+            message_content = [prompt, 0, None, file_data, None, None, 0]
+            inner = json.dumps([message_content, None, conv_param, model])
+        else:
+            # 纯文本：保持原结构，逐字节不变（防回归）
+            inner = json.dumps([[prompt], None, conv_param, model])
         outer = json.dumps([None, inner])
         return outer
 
-    async def generate(self, prompt: str, model: str, conversation_id: str = "") -> dict:
+    async def generate(self, prompt: str, model: str, conversation_id: str = "",
+                       attachments: list | None = None) -> dict:
         if not self._healthy:
             raise RuntimeError("Client not ready")
 
@@ -470,7 +496,7 @@ class GeminiWebClient:
         last_err = None
         for attempt in range(settings.max_retries):
             try:
-                return await self._send_request(prompt, model, conversation_id)
+                return await self._send_request(prompt, model, conversation_id, attachments)
             except HTTPStatusError as e:
                 last_err = e
                 status = e.status_code
@@ -489,15 +515,28 @@ class GeminiWebClient:
 
         raise RuntimeError(f"Exhausted {settings.max_retries} retries: {last_err}")
 
-    async def _send_request(self, prompt: str, model: str, conversation_id: str = "") -> dict:
+    async def _send_request(self, prompt: str, model: str, conversation_id: str = "",
+                           attachments: list | None = None) -> dict:
         await apply_jitter("api_call")
         await self._ensure_session_current()
         self._clear_session_cookies()
 
         resolved = _resolve_model(model)
-        encoded = self._encode_payload(prompt, resolved, conversation_id)
-        form_data = {"at": self._session_token, "f.req": encoded}
         cookies = self._get_cookies()
+
+        # 上传附件（与对话同账号同会话），拿到文件标识符
+        file_ids = None
+        if attachments:
+            from app.core.file_upload import upload_files
+            base_headers = self._get_headers("POST")
+            file_ids = await upload_files(
+                self._http, cookies, base_headers, self._push_id, attachments
+            )
+            if not file_ids:
+                logger.warning("All attachment uploads failed, falling back to text-only")
+
+        encoded = self._encode_payload(prompt, resolved, conversation_id, file_ids)
+        form_data = {"at": self._session_token, "f.req": encoded}
         headers = self._get_headers("POST", content_type="application/x-www-form-urlencoded")
 
         model_headers = _build_model_header(resolved)
