@@ -27,3 +27,6 @@ Thumbs.db
 
 # Runtime data (bind-mounted in prod via ./data:/app/data)
 data/
+
+# 个人监控脚本（含本地服务器信息，不开源）
+monitor_session.sh
