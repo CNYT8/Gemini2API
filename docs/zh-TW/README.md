@@ -458,7 +458,6 @@ response = client.chat.completions.create(
 - [x] 統一轉發引擎（一個介面呼叫所有大模型）
 - [x] 模型對應（別名→實際模型名）
 - [ ] 圖片/檔案上傳支援
-- [ ] Prometheus 監控指標
 
 ---
 

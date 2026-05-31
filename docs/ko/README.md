@@ -373,7 +373,6 @@ print(msg.content[0].text)
 - [x] 대시보드 시스템 정보 패널(버전/Python/OS/메모리/CPU/PID/실행 모드)
 - [x] 대화 컨텍스트 지속성
 - [ ] 이미지/파일 업로드 지원
-- [ ] Prometheus 모니터링 메트릭
 
 ---
 

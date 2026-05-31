@@ -458,7 +458,6 @@ response = client.chat.completions.create(
 - [x] Unified forwarding engine (single interface for all models)
 - [x] Model mapping (alias → actual model)
 - [ ] Image/file upload support
-- [ ] Prometheus monitoring metrics
 
 ---
 

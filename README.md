@@ -658,7 +658,6 @@ gemini2api/
 - [x] 对话上下文持久化
 - [x] GitHub Actions 自动构建镜像
 - [x] 图片/文件上传支持
-- [ ] Prometheus 监控指标
 
 ---
 
