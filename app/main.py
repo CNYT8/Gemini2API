@@ -178,7 +178,8 @@ async def log_capture_middleware(request: Request, call_next):
 
     return response
 
-app.include_router(openai.router)
+app.include_router(openai.router, prefix="/openai/v1")
+app.include_router(openai.router, prefix="/v1")  # 标准 OpenAI 路径，兼容 OpenClaw 等客户端
 app.include_router(claude.router)
 app.include_router(gemini.router)
 app.include_router(research.router)

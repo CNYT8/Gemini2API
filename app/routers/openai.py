@@ -21,7 +21,7 @@ from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tok
 from app.utils.prompt import build_prompt_from_messages, extract_attachments
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/openai/v1", tags=["OpenAI"])
+router = APIRouter(tags=["OpenAI"])
 
 
 @router.get("/models")
