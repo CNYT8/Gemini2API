@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [1.6.3] - 2025-05-31
+
+### Added
+- 图片/文件上传支持：OpenAI（image_url）、Claude（image.source）、Gemini（inline_data）三格式多模态
+- 上传模块 `app/core/file_upload.py`：content-push.googleapis.com，支持 base64 data URI 和远程 URL
+- Playground 图片上传 UI：添加图片按钮、缩略图预览、删除、聊天显示
+- 对外固定稳定模型名 `gemini-pro` / `gemini-flash` / `gemini-flash-thinking`（API 稳定契约，永不变）
+- 模型改用网页版 `otAQ7b`(GetUserStatus) RPC 拉取账号真实可用模型，内部按账号订阅等级动态映射
+
+### Fixed
+- 重启不再丢 Cookie：initialize 优先加载磁盘持久化的有效 Cookie，不被 .env 旧值覆盖
+- 模型不再用正则从 HTML 乱抓（消除 gemini-2.5-flash-image 等不可用脏数据）
+- 深色主题取消按钮文字白色（补 `.btn-secondary` 样式）
+- 修复 gemini.py 既有 bug：generate 调用签名、system_instruction 类型、build_tool_prompt 用法、split_into_chunks async
+
 ## [1.6.2] - 2025-05-19
 
 ### Added
