@@ -46,10 +46,16 @@ class Account:
 class AccountPool:
     def __init__(self):
         self._accounts: list[Account] = []
-        self._lock = asyncio.Lock()
+        # Condition 自带一把锁，既保护账号列表的并发访问，又用于并发满载时排队等待。
+        self._cond = asyncio.Condition()
         self._robin_index = 0
         self._strategy = RotationStrategy(settings.rotation_strategy)
         self._max_concurrent = settings.max_concurrent_per_account
+        # 并发满载时排队等待上限（秒）。等不到可用槽位才报错，而不是立即拒绝，
+        # 让 agent 的高并发请求排队通过而非撞 "No available accounts" 失败。
+        self._acquire_timeout = settings.acquire_timeout
+        # 持有后台 fire-and-forget task 的强引用，防止被 GC 中途回收
+        self._bg_tasks: set = set()
 
     @property
     def accounts(self) -> list[Account]:
@@ -109,49 +115,89 @@ class AccountPool:
             account.status = AccountStatus.EXPIRED
             logger.warning(f"Account {account.id} ({account.label}) failed to initialize")
 
+    def _find_available(self) -> Account | None:
+        """在已持有 self._cond 锁的前提下，挑一个未满载的 ACTIVE 账号；没有则返回 None。"""
+        available = [
+            a for a in self._accounts
+            if a.status == AccountStatus.ACTIVE
+            and a.active_requests < self._max_concurrent
+        ]
+        if not available:
+            return None
+        if self._strategy == RotationStrategy.ROUND_ROBIN:
+            return self._pick_round_robin(available)
+        return self._pick_failover(available)
+
+    async def _try_recover_expired(self):
+        """无可用账号时，尝试恢复 EXPIRED 账号（已持有锁）。"""
+        for a in self._accounts:
+            if a.status == AccountStatus.EXPIRED and a.client:
+                try:
+                    result = await a.client.check_account()
+                    if result.get("valid"):
+                        a.status = AccountStatus.ACTIVE
+                        a.consecutive_failures = 0
+                        logger.info(f"Account {a.id} recovered during acquire")
+                except Exception:
+                    pass
+
     async def acquire(self) -> Account:
-        async with self._lock:
-            available = [
-                a for a in self._accounts
-                if a.status == AccountStatus.ACTIVE
-                and a.active_requests < self._max_concurrent
-            ]
-            if not available:
-                # 尝试恢复 EXPIRED 账号
-                for a in self._accounts:
-                    if a.status == AccountStatus.EXPIRED and a.client:
-                        try:
-                            result = await a.client.check_account()
-                            if result.get("valid"):
-                                a.status = AccountStatus.ACTIVE
-                                a.consecutive_failures = 0
-                                available.append(a)
-                                logger.info(f"Account {a.id} recovered during acquire")
-                        except Exception:
-                            pass
-            if not available:
-                raise RuntimeError("No available accounts")
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + self._acquire_timeout
+        async with self._cond:
+            while True:
+                account = self._find_available()
+                if account is not None:
+                    account.active_requests += 1
+                    account.last_used = datetime.now(timezone.utc)
+                    return account
 
-            if self._strategy == RotationStrategy.ROUND_ROBIN:
-                account = self._pick_round_robin(available)
+                # 没有空闲槽位。区分两种情况：
+                #   ① 有 ACTIVE 账号但都满载 → 排队等 release 唤醒（不要跑网络恢复，
+                #      否则高并发满载时每次唤醒都串行跑 check_account 把整个池卡死）
+                #   ② 完全没有 ACTIVE 账号 → 才尝试救活 EXPIRED（网络 I/O，低频路径）
+                has_active = any(a.status == AccountStatus.ACTIVE for a in self._accounts)
+                if not has_active:
+                    await self._try_recover_expired()
+                    account = self._find_available()
+                    if account is not None:
+                        account.active_requests += 1
+                        account.last_used = datetime.now(timezone.utc)
+                        return account
+                    # 救不活，且没有 ACTIVE → 排队也没意义，立即报错
+                    raise RuntimeError("No available accounts")
+
+                # 有 ACTIVE 账号但都满载 → 排队等可用槽位，而非直接拒绝
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        f"All accounts busy (max_concurrent={self._max_concurrent}), "
+                        f"waited {self._acquire_timeout}s"
+                    )
+                try:
+                    await asyncio.wait_for(self._cond.wait(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    raise RuntimeError(
+                        f"All accounts busy (max_concurrent={self._max_concurrent}), "
+                        f"waited {self._acquire_timeout}s"
+                    )
+
+    async def release(self, account: Account, success: bool):
+        async with self._cond:
+            account.active_requests = max(0, account.active_requests - 1)
+            account.request_count += 1
+            if success:
+                account.consecutive_failures = 0
             else:
-                account = self._pick_failover(available)
-
-            account.active_requests += 1
-            account.last_used = datetime.now(timezone.utc)
-            return account
-
-    def release(self, account: Account, success: bool):
-        account.active_requests = max(0, account.active_requests - 1)
-        account.request_count += 1
-        if success:
-            account.consecutive_failures = 0
-        else:
-            account.error_count += 1
-            account.consecutive_failures += 1
-            if account.consecutive_failures >= 3:
-                account.status = AccountStatus.EXPIRED
-                logger.warning(f"Account {account.id} marked expired after 3 consecutive failures")
+                account.error_count += 1
+                account.consecutive_failures += 1
+                if account.consecutive_failures >= 3:
+                    account.status = AccountStatus.EXPIRED
+                    logger.warning(f"Account {account.id} marked expired after 3 consecutive failures")
+            # 释放了一个槽位，只唤醒一个排队的等待者即可（notify(1) 避免惊群：
+            # notify_all 会让所有等待者一起醒来争抢同一个空位，落败者再重新 wait，
+            # 在高并发满载时造成无谓的反复唤醒/竞争）
+            self._cond.notify(1)
 
     def _pick_round_robin(self, available: list[Account]) -> Account:
         self._robin_index = self._robin_index % len(available)
@@ -219,6 +265,18 @@ class AccountPool:
 
     def set_max_concurrent(self, value: int):
         self._max_concurrent = value
+        # 提高上限后，唤醒排队等槽位的请求让它们重新检查（notify(1) 会逐个传递，
+        # 这里用 notify_all 一次性放行，让所有等待者重新评估新上限）
+        async def _wake():
+            async with self._cond:
+                self._cond.notify_all()
+        try:
+            task = asyncio.get_running_loop().create_task(_wake())
+            # 存强引用防止 task 被 GC 中途回收，完成后自动移除
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+        except RuntimeError:
+            pass
 
     def get_status(self) -> dict:
         accounts_info = []
@@ -251,13 +309,32 @@ class AccountPool:
             result = await account.client.generate(prompt, model, conversation_id, attachments)
             latency_ms = (time.time() - t0) * 1000
             live_metrics.record_request(model, latency_ms)
-            self.release(account, success=True)
+            await self.release(account, success=True)
             return result
-        except Exception as e:
+        except Exception:
             latency_ms = (time.time() - t0) * 1000
             live_metrics.record_request(model, latency_ms)
-            self.release(account, success=False)
+            await self.release(account, success=False)
             raise
+
+    async def generate_stream(self, prompt: str, model: str, conversation_id: str = "",
+                              attachments: list | None = None):
+        """真流式：持有账号槽位直到整个流结束，再 release。
+        逐块产出 {"type":"delta","text":增量} ，最后产出 {"type":"final", ...}（含会话ID/图片）。
+        """
+        account = await self.acquire()
+        t0 = time.time()
+        success = True
+        try:
+            async for evt in account.client.generate_stream(prompt, model, conversation_id, attachments):
+                yield evt
+        except Exception:
+            success = False
+            raise
+        finally:
+            latency_ms = (time.time() - t0) * 1000
+            live_metrics.record_request(model, latency_ms)
+            await self.release(account, success=success)
 
     @property
     def models(self) -> list[str]:

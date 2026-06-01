@@ -177,35 +177,51 @@ async def stream_generate_content(model: str, req: GeminiRequest):
             prompt = build_tool_prompt(prompt, function_declarations)
 
     async def stream_generator() -> AsyncGenerator[str, None]:
-        try:
-            result = await gemini_client.generate(prompt, model, "", attachments)
-        except (RuntimeError, ValueError) as e:
-            err = {"error": {"message": str(e), "type": "api_error"}}
-            yield json.dumps(err) + "\n"
-            return
-
-        response_text = result.get("text", "")
-
-        if has_tools:
-            parsed = parse_tool_response(response_text)
-            if isinstance(parsed, dict):
-                response_text = parsed.get("content", response_text)
-
-        async for chunk in split_into_chunks(response_text):
-            chunk_response = {
-                "candidates": [
-                    {
-                        "content": {
-                            "parts": [{"text": chunk}],
-                            "role": "model",
-                        },
-                        "index": 0,
-                    }
-                ]
-            }
-            yield json.dumps(chunk_response) + "\n"
+        def _chunk(text: str) -> str:
+            return json.dumps({
+                "candidates": [{
+                    "content": {"parts": [{"text": text}], "role": "model"},
+                    "index": 0,
+                }]
+            }) + "\n"
 
         prompt_tokens = estimate_tokens(prompt)
+        response_text = ""
+
+        # 有工具/附件：需完整文本，走非流式收集后切片（零回归）
+        if has_tools or attachments:
+            try:
+                result = await gemini_client.generate(prompt, model, "", attachments)
+            except Exception as e:
+                yield json.dumps({"error": {"message": str(e), "type": "api_error"}}) + "\n"
+                return
+            response_text = result.get("text", "")
+            if has_tools:
+                parsed = parse_tool_response(response_text)
+                if isinstance(parsed, dict):
+                    response_text = parsed.get("content", response_text)
+            async for chunk in split_into_chunks(response_text):
+                yield _chunk(chunk)
+        else:
+            # === 真流式路径（纯文本）===
+            try:
+                async for evt in gemini_client.generate_stream(prompt, model, "", attachments):
+                    if evt.get("type") == "delta":
+                        delta = evt.get("text", "")
+                        if evt.get("_replace"):
+                            response_text = delta
+                        else:
+                            response_text += delta
+                        if delta:
+                            yield _chunk(delta)
+                    elif evt.get("type") == "final":
+                        response_text = evt.get("text", response_text)
+            except Exception as e:
+                # generate_stream 在 HTTP>=400 时抛 HTTPStatusError（非 RuntimeError/ValueError 子类），
+                # 故这里捕获 Exception，与 openai/claude 真流式路径一致，避免击穿生成器
+                yield json.dumps({"error": {"message": str(e), "type": "api_error"}}) + "\n"
+                return
+
         completion_tokens = estimate_tokens(response_text)
 
         final_chunk = {

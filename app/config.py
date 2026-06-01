@@ -8,7 +8,7 @@ from pydantic import field_validator
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "1.6.9"
+APP_VERSION = "1.6.10"
 
 
 def _generate_api_key() -> str:
@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     health_check_interval: int = 5
     accounts_file: str = "accounts.json"
     rotation_strategy: str = "round-robin"
-    max_concurrent_per_account: int = 3
+    max_concurrent_per_account: int = 8
+    # 并发满载时，acquire 排队等待可用槽位的上限（秒）。等不到才报错，
+    # 避免 agent 高并发请求直接撞 "No available accounts" 失败。
+    acquire_timeout: float = 60.0
     fingerprint_config_path: str = "data/fingerprint.json"
     version_sync_enabled: bool = True
     version_sync_interval: int = 24

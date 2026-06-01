@@ -122,6 +122,98 @@ def _build_model_header(model_name: str) -> dict[str, str]:
 
 MODELS_CACHE_FILE = Path("data/models_cache.json")
 
+# 生图时模型回复文本里会带这种占位 URL（无实际意义，真图在 images 字段里），
+# 流式与非流式都要过滤掉，避免显示成网址。预编译复用。
+_IMAGE_GEN_PLACEHOLDER_RE = re.compile(
+    r'https?://googleusercontent\.com/image_generation_content/\d+'
+)
+
+
+def _scan_complete_wrb_frames(buf: str) -> tuple[list, int]:
+    """从流式累积 buffer 中切出所有完整的 `["wrb.fr",...]` 顶层元素。
+
+    Gemini StreamGenerate 的响应是 `)]}'\\n\\n` 前缀 + 一个不断增长的 JSON 数组，
+    元素形如 `["wrb.fr",null,"<json字符串>",...]` 逐个流式追加（chunk 边界随意切，
+    一帧可能跨多个 chunk）。这里用括号深度扫描（正确处理字符串与转义）切出每个
+    已闭合的完整元素，返回 (已解析的元素列表, 已消费到的 buffer 偏移量)。
+    未闭合的尾部留给下一个 chunk 继续累积。
+    """
+    frames: list = []
+    consumed = 0
+    i = 0
+    n = len(buf)
+    while i < n:
+        start = buf.find('["wrb.fr"', i)
+        if start == -1:
+            break
+        # 从 start 开始做括号深度匹配，切出完整的 [...] 元素
+        depth = 0
+        in_str = False
+        esc = False
+        end = -1
+        j = start
+        while j < n:
+            c = buf[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == '\\':
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            else:
+                if c == '"':
+                    in_str = True
+                elif c == '[':
+                    depth += 1
+                elif c == ']':
+                    depth -= 1
+                    if depth == 0:
+                        end = j
+                        break
+            j += 1
+        if end == -1:
+            # 这个元素还没接收完整，停在这里，下个 chunk 再来
+            break
+        elem_str = buf[start:end + 1]
+        try:
+            elem = json.loads(elem_str)
+            frames.append(elem)
+        except Exception:
+            pass
+        consumed = end + 1
+        i = end + 1
+    return frames, consumed
+
+
+def _extract_text_from_wrb(elem: list) -> tuple[str | None, str]:
+    """从单个 wrb.fr 帧提取 (累积文本, 会话ID)。非文本帧返回 (None, "")。
+    文本路径 payload[4][0][1][0]；会话ID 用 str(payload[1])，与非流式 _parse_output
+    逐字节一致（会话ID 会存进 conversation_store，下轮回传给 _encode_payload 续接会话，
+    流式与非流式必须同格式，否则多轮对话续接会错乱）。
+    """
+    try:
+        if not isinstance(elem, list) or len(elem) < 3 or elem[0] != "wrb.fr":
+            return None, ""
+        rp = elem[2]
+        if not isinstance(rp, str):
+            return None, ""
+        payload = json.loads(rp)
+        if not isinstance(payload, list) or len(payload) < 5:
+            return None, ""
+        conv = str(payload[1]) if payload[1] else ""
+        text = None
+        cands = payload[4]
+        if isinstance(cands, list) and cands:
+            c0 = cands[0]
+            if isinstance(c0, list) and len(c0) > 1 and isinstance(c0[1], list) \
+                    and c0[1] and isinstance(c0[1][0], str):
+                text = c0[1][0]
+        return text, conv
+    except Exception:
+        return None, ""
+
+
 MODEL_VALID_PATTERN = re.compile(
     r"gemini-(\d+)\.(\d+)-([a-z]+)(?:-([a-z]+))?(?:-preview)?(?:-\d{2}-\d{2})?"
 )
@@ -631,6 +723,172 @@ class GeminiWebClient:
 
         raise RuntimeError(f"Exhausted {settings.max_retries} retries: {last_err}")
 
+    async def generate_stream(self, prompt: str, model: str, conversation_id: str = "",
+                              attachments: list | None = None):
+        """真流式：用独立临时 AsyncSession 流式读 StreamGenerate，逐帧产出文本增量。
+
+        产出事件：
+          {"type": "delta", "text": <新增文本>}        —— 流式过程中多次
+          {"type": "final", "text": <完整文本>,
+           "conversation_id": <会话ID>, "images": [...]}  —— 收尾一次
+
+        关键约束（见记忆 gemini2api-project 真流式段）：
+        - curl_cffi 0.7.4 并发流式会串号（#612），故每请求用独立 session（不复用 self._http）。
+        - 流式 timeout 可能失效（#215），故用 asyncio.wait_for 兜底每个 chunk 的等待。
+        - 帧是累积式，逐帧 diff 出增量。生图/附件场景在最后帧统一处理。
+        """
+        if not self._healthy:
+            raise RuntimeError("Client not ready")
+
+        resolved = _resolve_model(model)
+        if resolved not in GEMINI_MODELS:
+            raise ValueError(
+                f"Model '{model}' unavailable. Options: {', '.join(PUBLIC_MODELS)}"
+            )
+
+        await apply_jitter("api_call")
+        await self._ensure_session_current()
+        cookies = self._get_cookies()
+
+        # 附件上传仍复用共享 session 的逻辑（与对话同账号同会话），上传完再走流式对话
+        file_ids = None
+        if attachments:
+            from app.core.file_upload import upload_files
+            base_headers = self._get_headers("POST")
+            file_ids = await upload_files(
+                self._http, cookies, base_headers, self._push_id, attachments
+            )
+            if not file_ids:
+                logger.warning("All attachment uploads failed, streaming text-only")
+
+        encoded = self._encode_payload(prompt, resolved, conversation_id, file_ids)
+        form_data = {"at": self._session_token, "f.req": encoded}
+        headers = self._get_headers("POST", content_type="application/x-www-form-urlencoded")
+        model_headers = _build_model_header(resolved)
+        if model_headers:
+            headers.update(model_headers)
+
+        buf = ""
+        emitted = ""             # 已 yield 出去的完整文本（用于和新帧比前缀算增量）
+        last_text = ""           # 最新一帧的完整文本
+        last_conv = ""
+        last_images: list = []
+        chunk_timeout = 120      # 单个 chunk 最长等待（兜底 #215 timeout 失效）
+
+        session = AsyncSession(impersonate=self._current_target, timeout=180)
+        try:
+            async with session.stream(
+                "POST", GENERATE_URL,
+                data=form_data, cookies=cookies, headers=headers,
+            ) as resp:
+                try:
+                    if resp.status_code >= 400:
+                        body = await resp.atext()
+                        raise HTTPStatusError(resp.status_code, body[:200])
+
+                    aiter = resp.aiter_content()
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(aiter.__anext__(), timeout=chunk_timeout)
+                        except StopAsyncIteration:
+                            break
+                        if not chunk:
+                            continue
+                        buf += chunk.decode("utf-8", "replace")
+                        frames, consumed = _scan_complete_wrb_frames(buf)
+                        if consumed:
+                            buf = buf[consumed:]
+                        for elem in frames:
+                            text, conv = _extract_text_from_wrb(elem)
+                            if conv:
+                                last_conv = conv
+                            imgs = self._images_from_wrb(elem)
+                            if imgs:
+                                last_images = imgs
+                            if text is None:
+                                continue
+                            # 生图时帧文本会带占位 URL，流式增量也要先过滤，否则会流给客户端
+                            # （该占位串只在生图时出现，纯文本回复不含，无条件过滤安全）
+                            if "image_generation_content" in text:
+                                text = _IMAGE_GEN_PLACEHOLDER_RE.sub("", text)
+                            last_text = text
+                            # 帧是累积式：当前帧文本 = 已发送文本 + 新增尾部。
+                            # 与「已 emit 的文本」(emitted) 比前缀，决定是追加增量还是整段被替换。
+                            if text == emitted:
+                                continue  # 文本没变（如重复帧），不重复发
+                            if len(text) >= len(emitted) and text.startswith(emitted):
+                                delta = text[len(emitted):]
+                                emitted = text
+                                if delta:
+                                    yield {"type": "delta", "text": delta}
+                            else:
+                                # 极少数：帧文本非纯累积（被替换/重排），整段重置补发
+                                emitted = text
+                                logger.warning("[stream] 非累积帧，整段重置补发（_replace）")
+                                yield {"type": "delta", "text": text, "_replace": True}
+                finally:
+                    # 无论正常结束/4xx/超时，都尝试更新 PSIDTS（流式下 resp 头部 cookie 可读），
+                    # 避免流式错误路径漏掉 Cookie 轮换（与非流式 _send_request 行为对齐）
+                    try:
+                        self._cookie_jar.update_from_response(resp)
+                    except Exception:
+                        pass
+        finally:
+            try:
+                await session.close()
+            except Exception:
+                pass
+
+        yield await self._finalize_stream(last_text, last_conv, last_images)
+
+    def _images_from_wrb(self, elem: list) -> list:
+        """从单个 wrb.fr 帧提取 AI 生成图片（复用 _extract_generated_images）。"""
+        try:
+            if not isinstance(elem, list) or len(elem) < 3 or elem[0] != "wrb.fr":
+                return []
+            payload = json.loads(elem[2]) if isinstance(elem[2], str) else None
+            if not isinstance(payload, list) or len(payload) < 5:
+                return []
+            cands = payload[4]
+            if not isinstance(cands, list) or not cands:
+                return []
+            return self._extract_generated_images(cands[0])
+        except Exception:
+            return []
+
+    async def _finalize_stream(self, text: str, conv_id: str, images: list) -> dict:
+        """流式收尾：下载/存生成图、过滤占位 URL，组装与 _send_request 一致的 final 结果。"""
+        result_images: list = []
+        if images:
+            import base64 as _b64
+            from app.core import image_store
+            cookies = self._get_cookies()
+            for img in images:
+                data = await self._download_generated_image(img["url"], cookies)
+                if not data:
+                    logger.warning(f"[imagegen] 流式下载失败: {img['url'][:60]}")
+                    continue
+                mime = img.get("mime", "image/png")
+                entry = {
+                    "b64": _b64.b64encode(data).decode(),
+                    "mime": mime,
+                    "width": img.get("width"),
+                    "height": img.get("height"),
+                }
+                try:
+                    entry["id"] = image_store.save_image(data, mime)
+                except Exception as e:
+                    logger.warning(f"[imagegen] 存盘失败: {e}")
+                result_images.append(entry)
+            # 生图时模型文本里的占位 URL 无意义，过滤掉（与 _parse_output 一致）
+            text = _IMAGE_GEN_PLACEHOLDER_RE.sub("", text).strip()
+        return {
+            "type": "final",
+            "text": text,
+            "conversation_id": conv_id,
+            "images": result_images,
+        }
+
     async def _send_request(self, prompt: str, model: str, conversation_id: str = "",
                            attachments: list | None = None) -> dict:
         await apply_jitter("api_call")
@@ -769,9 +1027,7 @@ class GeminiWebClient:
         # 生图时模型文本里会带占位 URL（googleusercontent.com/image_generation_content/...），
         # 它没有实际意义（真图在 images 里），过滤掉，避免显示成网址
         if images:
-            text_content = re.sub(
-                r'https?://googleusercontent\.com/image_generation_content/\d+', '', text_content
-            ).strip()
+            text_content = _IMAGE_GEN_PLACEHOLDER_RE.sub("", text_content).strip()
 
         return {"text": text_content, "conversation_id": conv_id, "images": images}
 

@@ -152,6 +152,65 @@ async def count_tokens(req: ClaudeRequest):
 async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=None) -> AsyncGenerator[str, None]:
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
 
+    # 有工具/附件：需完整文本，走非流式收集后切片（零回归）
+    if has_tools or attachments:
+        async for sse in _stream_claude_buffered(prompt, model, has_tools, attachments, msg_id):
+            yield sse
+        return
+
+    # === 真流式路径（纯文本）===
+    yield format_sse({
+        "type": "message_start",
+        "message": {
+            "id": msg_id,
+            "type": "message",
+            "role": "assistant",
+            "content": [],
+            "model": model,
+            "usage": {"input_tokens": estimate_tokens(prompt), "output_tokens": 0},
+        },
+    })
+    yield format_sse({
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {"type": "text", "text": ""},
+    })
+
+    full_text = ""
+    try:
+        async for evt in gemini_client.generate_stream(prompt, model, "", attachments):
+            if evt.get("type") == "delta":
+                delta = evt.get("text", "")
+                if evt.get("_replace"):
+                    full_text = delta
+                else:
+                    full_text += delta
+                if delta:
+                    yield format_sse({
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": delta},
+                    })
+            elif evt.get("type") == "final":
+                full_text = evt.get("text", full_text)
+    except Exception as e:
+        yield format_sse({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": f"Error: {e}"},
+        })
+
+    yield format_sse({"type": "content_block_stop", "index": 0})
+    yield format_sse({
+        "type": "message_delta",
+        "delta": {"stop_reason": "end_turn"},
+        "usage": {"output_tokens": estimate_tokens(full_text)},
+    })
+    yield format_sse({"type": "message_stop"})
+
+
+async def _stream_claude_buffered(prompt: str, model: str, has_tools: bool, attachments, msg_id: str) -> AsyncGenerator[str, None]:
+    """非流式收集 + 切片：用于有工具调用/附件的场景。"""
     try:
         result = await gemini_client.generate(prompt, model, "", attachments)
     except Exception as e:
@@ -221,3 +280,4 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
     })
 
     yield format_sse({"type": "message_stop"})
+

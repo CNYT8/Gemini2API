@@ -79,6 +79,13 @@ curl http://localhost:5918/openai/v1/models \
 }
 ```
 
+> 💡 **Model Selection Guide**: The three models offer different speed/quality tradeoffs.
+> - `gemini-flash`: Fastest (response ~4-5 seconds), ideal for **agent / high-frequency / high-concurrency** scenarios, recommended as default.
+> - `gemini-flash-thinking`: Includes reasoning process, speed close to flash, suitable for tasks requiring inference.
+> - `gemini-pro`: Highest quality but slower (response ~9-17 seconds, longer with extended context), suitable for quality-critical scenarios where latency is not a concern.
+>
+> Agent clients (which issue many concurrent requests) should prioritize `gemini-flash`. This service's streaming interface is true incremental streaming, pushing tokens as soon as the first character is generated.
+
 ### POST /openai/v1/chat/completions
 
 Generate chat completions. Supports streaming and function calling.

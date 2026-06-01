@@ -34,9 +34,8 @@ def _image_base(request) -> str:
         return ""
 
 
-def _images_to_markdown(images: list, request) -> str:
+def _images_md_from_base(images: list, base: str) -> str:
     """生成图片转 markdown。优先用本地托管 URL（客户端可渲染），无 id 降级 data URI。"""
-    base = _image_base(request)
     lines = []
     for im in images:
         if im.get("id") and base:
@@ -44,6 +43,11 @@ def _images_to_markdown(images: list, request) -> str:
         else:
             lines.append(f"![generated image](data:{im['mime']};base64,{im['b64']})")
     return "\n".join(lines)
+
+
+def _images_to_markdown(images: list, request) -> str:
+    """生成图片转 markdown。优先用本地托管 URL（客户端可渲染），无 id 降级 data URI。"""
+    return _images_md_from_base(images, _image_base(request))
 
 
 @router.get("/models")
@@ -209,6 +213,98 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     model_name = display_model or model
 
+    # 有工具调用或附件：需要完整文本才能解析 tool_calls / 处理上传，走非流式收集后再切片（零回归）。
+    # 纯文本对话：走真流式，逐帧产出 delta，首字到达时间从 4-17s 降到 ~首字生成时间。
+    if has_tools or attachments:
+        async for sse in _stream_response_buffered(
+            prompt, model, has_tools, gemini_conv_id, conv, messages_raw,
+            model_name, completion_id, attachments, base_url
+        ):
+            yield sse
+        return
+
+    # === 真流式路径 ===
+    first = StreamChunk(
+        id=completion_id, model=model_name,
+        choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
+    )
+    yield format_sse(first.model_dump())
+
+    full_text = ""
+    new_conv_id = ""
+    final_images = []
+    streamed_any = False
+    try:
+        async for evt in gemini_client.generate_stream(prompt, model, gemini_conv_id, attachments):
+            if evt.get("type") == "delta":
+                delta = evt.get("text", "")
+                if evt.get("_replace"):
+                    full_text = delta
+                else:
+                    full_text += delta
+                if delta:
+                    streamed_any = True
+                    chunk = StreamChunk(
+                        id=completion_id, model=model_name,
+                        choices=[StreamChoice(delta=StreamDelta(content=delta))],
+                    )
+                    yield format_sse(chunk.model_dump())
+            elif evt.get("type") == "final":
+                full_text = evt.get("text", full_text)
+                new_conv_id = evt.get("conversation_id", "")
+                final_images = evt.get("images") or []
+    except Exception as e:
+        # 流式失败：会话ID 过期等场景，用完整 prompt 非流式重试一次
+        if gemini_conv_id and messages_raw and not streamed_any:
+            try:
+                retry_prompt = build_prompt_from_messages(messages_raw)
+                result = await gemini_client.generate(retry_prompt, model, "", attachments)
+                full_text = result.get("text", "")
+                new_conv_id = result.get("conversation_id", "")
+                final_images = result.get("images") or []
+            except Exception as e2:
+                yield _err_chunk(completion_id, model_name, str(e2))
+                return
+        else:
+            yield _err_chunk(completion_id, model_name, str(e))
+            return
+
+    # 生图：流式时图片在最后帧拿到，收尾补一段 markdown 增量
+    if final_images:
+        md = _images_md_from_base(final_images, base_url)
+        tail = ("\n\n" + md) if full_text.strip() else md
+        full_text += tail
+        chunk = StreamChunk(
+            id=completion_id, model=model_name,
+            choices=[StreamChoice(delta=StreamDelta(content=tail))],
+        )
+        yield format_sse(chunk.model_dump())
+
+    # 持久化对话（与 buffered 子路径一致：流式只存 assistant，
+    # 多轮续接靠 gemini_conv_id，user 消息已在请求里）
+    if new_conv_id and conv:
+        conv.gemini_conv_id = new_conv_id
+        conv.add_message("assistant", full_text)
+        await conversation_store.update(conv)
+
+    done_chunk = StreamChunk(
+        id=completion_id, model=model_name,
+        choices=[StreamChoice(delta=StreamDelta(), finish_reason="stop")],
+    )
+    yield format_sse(done_chunk.model_dump())
+    yield "data: [DONE]\n\n"
+
+
+def _err_chunk(completion_id: str, model_name: str, msg: str) -> str:
+    chunk = StreamChunk(
+        id=completion_id, model=model_name,
+        choices=[StreamChoice(delta=StreamDelta(content=f"Error: {msg}"), finish_reason="stop")],
+    )
+    return format_sse(chunk.model_dump()) + "data: [DONE]\n\n"
+
+
+async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, model_name: str = "", completion_id: str = "", attachments=None, base_url: str = "") -> AsyncGenerator[str, None]:
+    """非流式收集 + 切片伪流式：用于有工具调用/附件、需要完整文本的场景。"""
     try:
         result = await gemini_client.generate(prompt, model, gemini_conv_id, attachments)
     except Exception as e:
@@ -217,34 +313,16 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
             try:
                 result = await gemini_client.generate(full_prompt, model, "", attachments)
             except Exception as e2:
-                error_chunk = StreamChunk(
-                    id=completion_id,
-                    model=model_name,
-                    choices=[StreamChoice(delta=StreamDelta(content=f"Error: {e2}"), finish_reason="stop")],
-                )
-                yield format_sse(error_chunk.model_dump())
-                yield "data: [DONE]\n\n"
+                yield _err_chunk(completion_id, model_name, str(e2))
                 return
         else:
-            error_chunk = StreamChunk(
-                id=completion_id,
-                model=model_name,
-                choices=[StreamChoice(delta=StreamDelta(content=f"Error: {e}"), finish_reason="stop")],
-            )
-            yield format_sse(error_chunk.model_dump())
-            yield "data: [DONE]\n\n"
+            yield _err_chunk(completion_id, model_name, str(e))
             return
 
     text = result.get("text", "")
     gen_images = result.get("images") or []
     if gen_images:
-        lines = []
-        for im in gen_images:
-            if im.get("id") and base_url:
-                lines.append(f"![generated image]({base_url}/images/{im['id']})")
-            else:
-                lines.append(f"![generated image](data:{im['mime']};base64,{im['b64']})")
-        md = "\n".join(lines)
+        md = _images_md_from_base(gen_images, base_url)
         text = (text + "\n\n" + md) if text.strip() else md
     new_conv_id = result.get("conversation_id", "")
 
@@ -261,21 +339,19 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
                 tool_call_data = {
                     "id": call_id,
                     "type": "function",
-          "function": {
+                    "function": {
                         "name": tc["name"],
                         "arguments": json.dumps(tc.get("arguments", {})),
                     },
                 }
                 chunk = StreamChunk(
-                    id=completion_id,
-                    model=model_name,
+                    id=completion_id, model=model_name,
                     choices=[StreamChoice(delta=StreamDelta(tool_calls=[tool_call_data]))],
                 )
                 yield format_sse(chunk.model_dump())
 
             final = StreamChunk(
-                id=completion_id,
-                model=model_name,
+                id=completion_id, model=model_name,
                 choices=[StreamChoice(delta=StreamDelta(), finish_reason="tool_calls")],
             )
             yield format_sse(final.model_dump())
@@ -284,27 +360,25 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
         text = parsed.get("content", text)
 
     first = StreamChunk(
-        id=completion_id,
-        model=model_name,
+        id=completion_id, model=model_name,
         choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
     )
     yield format_sse(first.model_dump())
 
     async for word in split_into_chunks(text):
         chunk = StreamChunk(
-            id=completion_id,
-            model=model_name,
+            id=completion_id, model=model_name,
             choices=[StreamChoice(delta=StreamDelta(content=word))],
         )
         yield format_sse(chunk.model_dump())
 
     done_chunk = StreamChunk(
-        id=completion_id,
-        model=model_name,
+        id=completion_id, model=model_name,
         choices=[StreamChoice(delta=StreamDelta(), finish_reason="stop")],
     )
     yield format_sse(done_chunk.model_dump())
     yield "data: [DONE]\n\n"
+
 
 
 # 触发生图的关键词（prompt 不含时自动加前缀）
