@@ -122,10 +122,11 @@ def _build_model_header(model_name: str) -> dict[str, str]:
 
 MODELS_CACHE_FILE = Path("data/models_cache.json")
 
-# 生图时模型回复文本里会带这种占位 URL（无实际意义，真图在 images 字段里），
+# 生图/找图时模型回复文本里会带这种 googleusercontent 占位 URL（无实际意义，
+# 真图在 images 字段里；image_retrieval/image_collection 是检索占位，客户端访问无效）。
 # 流式与非流式都要过滤掉，避免显示成网址。预编译复用。
 _IMAGE_GEN_PLACEHOLDER_RE = re.compile(
-    r'https?://googleusercontent\.com/image_generation_content/\d+'
+    r'https?://googleusercontent\.com/(?:image_generation_content|image_retrieval|image_collection)[/\w]*\d*'
 )
 
 
@@ -813,9 +814,9 @@ class GeminiWebClient:
                                 last_images = imgs
                             if text is None:
                                 continue
-                            # 生图时帧文本会带占位 URL，流式增量也要先过滤，否则会流给客户端
-                            # （该占位串只在生图时出现，纯文本回复不含，无条件过滤安全）
-                            if "image_generation_content" in text:
+                            # 生图/找图时帧文本会带 googleusercontent 占位 URL，流式增量也要先过滤，
+                            # 否则会流给客户端（这类占位串只在生图/检索时出现，纯文本回复不含，过滤安全）
+                            if "googleusercontent.com/image" in text:
                                 text = _IMAGE_GEN_PLACEHOLDER_RE.sub("", text)
                             last_text = text
                             # 帧是累积式：当前帧文本 = 已发送文本 + 新增尾部。
@@ -1030,10 +1031,15 @@ class GeminiWebClient:
                 if payload[1]:
                     conv_id = str(payload[1])
 
-        # 生图时模型文本里会带占位 URL（googleusercontent.com/image_generation_content/...），
-        # 它没有实际意义（真图在 images 里），过滤掉，避免显示成网址
-        if images:
+        # 生图/找图时模型文本里会带 googleusercontent 占位 URL（无实际意义，真图在 images 里；
+        # image_retrieval/image_collection 是检索占位客户端访问无效），无条件过滤，避免显示成网址
+        if "googleusercontent.com/image" in text_content:
+            had_placeholder = bool(_IMAGE_GEN_PLACEHOLDER_RE.search(text_content))
             text_content = _IMAGE_GEN_PLACEHOLDER_RE.sub("", text_content).strip()
+            # 过滤后文本空了且没有真图：Gemini 走了"检索图片"而非"生成"（模糊措辞如"来张X图"易触发）。
+            # 占位URL客户端用不了，给友好提示引导用明确生图措辞，而不是返回空。
+            if had_placeholder and not text_content and not images:
+                text_content = "（没有生成图片。试试更明确的生成指令，如「画一张…」「生成一张…的图片」。）"
 
         return {"text": text_content, "conversation_id": conv_id, "images": images}
 

@@ -10,12 +10,19 @@ logger = logging.getLogger(__name__)
 # 中文：必须是画图/生成图片类；英文：必须含 image/picture/photo/drawing 等图像词。
 _IMAGE_INTENT_PATTERNS = (
     "画一", "画个", "画张", "画幅", "画副", "帮我画", "给我画", "画图", "画一张", "画一幅",
-    "生成图片", "生成一张图", "生成图像", "生成一幅", "生成一张照片", "做一张图", "做个图",
-    "绘制", "绘一", "画出", "p一张", "p个图",
+    "画个图", "画张图", "画幅图", "画一只", "画只", "画头", "画条",
+    "生成图片", "生成一张图", "生成图像", "生成一幅", "生成一张照片", "生成张图", "生成个图",
+    "生成海报", "生成插画", "生成一张海报",
+    "做一张图", "做个图", "做张图", "做一张海报", "做个海报", "做张海报", "做一张照片",
+    "设计一张海报", "设计海报", "设计一张图", "设计张海报", "设计个海报", "设计一幅",
+    "画一张海报", "画张海报", "画个海报", "画海报",
+    "绘制", "绘一", "画出", "出一张图", "出张图", "p一张", "p个图", "做幅",
+    "一张海报", "张海报", "幅海报", "来张图", "来一张图", "来个图",
     "draw a", "draw an", "draw me", "generate an image", "generate a picture",
-    "generate an picture", "create an image", "create a picture", "create a photo",
-    "make an image", "make a picture", "an image of", "a picture of", "a photo of",
-    "image of a", "picture of a",
+    "generate an picture", "generate a poster", "create an image", "create a picture",
+    "create a photo", "create a poster", "design a poster", "make an image",
+    "make a picture", "make a poster", "an image of", "a picture of", "a photo of",
+    "a poster of", "image of a", "picture of a", "poster of",
 )
 
 
@@ -28,6 +35,27 @@ def is_image_generation_intent(text: str) -> bool:
         return False
     low = text.lower()
     return any(p in low for p in _IMAGE_INTENT_PATTERNS)
+
+
+# 宽松版：图像名词 + 产出动词的组合。用于「流式分流」兜底——
+# 误判只是让该请求走非流式 buffered（慢一点点），代价极小；
+# 但能兜住关键词没精确覆盖的生图表达，避免漏网走真流式导致图在文字后。
+_IMG_NOUNS = ("图", "图片", "图像", "海报", "插画", "照片", "壁纸", "logo", "头像", "封面",
+              "image", "picture", "poster", "photo", "drawing", "illustration", "wallpaper", "avatar")
+_IMG_VERBS = ("画", "生成", "绘", "做", "设计", "出", "整", "来", "搞", "弄", "制作", "帮我", "给我",
+              "draw", "generate", "create", "make", "design", "render")
+
+
+def maybe_image_generation_intent(text: str) -> bool:
+    """宽松判断是否可能是生图意图（用于流式分流兜底，宁可多走 buffered 不漏网）。"""
+    if not text:
+        return False
+    if is_image_generation_intent(text):
+        return True
+    low = text.lower()
+    has_noun = any(n in low for n in _IMG_NOUNS)
+    has_verb = any(v in low for v in _IMG_VERBS)
+    return has_noun and has_verb
 
 
 def build_tool_prompt(prompt: str, tools: list[dict], tool_choice=None) -> str:

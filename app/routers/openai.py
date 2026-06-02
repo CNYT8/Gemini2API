@@ -18,7 +18,7 @@ from app.models.openai import (
     ModelList, ModelInfo, UsageInfo,
     ImageGenerationRequest, ImageData, ImageResponse,
 )
-from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tokens, is_image_generation_intent
+from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tokens, is_image_generation_intent, maybe_image_generation_intent
 from app.utils.prompt import build_prompt_from_messages, extract_attachments
 
 logger = logging.getLogger(__name__)
@@ -147,11 +147,11 @@ async def chat_completions(req: ChatRequest, request: Request):
             )
 
     text = result.get("text", "")
-    # AI 生成图片：嵌入回复，优先本地托管 URL（CLI 客户端能渲染，base64 不行）
+    # AI 生成图片：图片在前，紧跟文字描述（单换行，不留多余空行）
     gen_images = result.get("images") or []
     if gen_images:
         md = _images_to_markdown(gen_images, request)
-        text = (text + "\n\n" + md) if text.strip() else md
+        text = (md + "\n" + text.strip()) if text.strip() else md
     new_conv_id = result.get("conversation_id", "")
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
 
@@ -219,8 +219,9 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     model_name = display_model or model
 
     # 有工具调用或附件：需要完整文本才能解析 tool_calls / 处理上传，走非流式收集后再切片（零回归）。
-    # 纯文本对话：走真流式，逐帧产出 delta，首字到达时间从 4-17s 降到 ~首字生成时间。
-    if has_tools or attachments:
+    # 生图意图（宽松判断兜底）：图片在生成的最后才拿到，真流式会"文字先流、图最后补"导致割裂；
+    #          走 buffered 收集完整结果，才能让图片排在文字前面。宽松判断宁可多走 buffered 不漏网。
+    if has_tools or attachments or maybe_image_generation_intent(prompt):
         async for sse in _stream_response_buffered(
             prompt, model, has_tools, gemini_conv_id, conv, messages_raw,
             model_name, completion_id, attachments, base_url
@@ -274,10 +275,11 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
             yield _err_chunk(completion_id, model_name, str(e))
             return
 
-    # 生图：流式时图片在最后帧拿到，收尾补一段 markdown 增量
+    # 生图兜底：极少数生图意图未被识别而走了真流式（文字已先流出，无法把图收回到最前）。
+    # 此时图片在最后帧拿到，补发图片增量；用单换行紧凑拼接，保证图能独立成行正常显示。
     if final_images:
         md = _images_md_from_base(final_images, base_url)
-        tail = ("\n\n" + md) if full_text.strip() else md
+        tail = ("\n" + md) if full_text.strip() else md
         full_text += tail
         chunk = StreamChunk(
             id=completion_id, model=model_name,
@@ -328,7 +330,7 @@ async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, ge
     gen_images = result.get("images") or []
     if gen_images:
         md = _images_md_from_base(gen_images, base_url)
-        text = (text + "\n\n" + md) if text.strip() else md
+        text = (md + "\n" + text.strip()) if text.strip() else md
     new_conv_id = result.get("conversation_id", "")
 
     if new_conv_id and conv:

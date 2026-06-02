@@ -119,19 +119,23 @@ async def create_message(req: ClaudeRequest, request: Request):
             )
         text = parsed.get("content", text)
 
-    blocks = [ContentBlock(type="text", text=text)]
-    # AI 生成图片：作为 Claude 原生 image block 追加。优先 url source（本地托管，
-    # 客户端可渲染），无 id 时降级 base64 source。
+    # AI 生成图片：作为 Claude 原生 image block。图片块排在文字块前面（图在前）。
+    # 优先 url source（本地托管，客户端可渲染），无 id 时降级 base64 source。
     base = str(request.base_url).rstrip("/")
+    image_blocks = []
     for im in (result.get("images") or []):
         if im.get("id") and base:
-            blocks.append(ContentBlock(type="image", source={
+            image_blocks.append(ContentBlock(type="image", source={
                 "type": "url", "url": f"{base}/images/{im['id']}",
             }))
         else:
-            blocks.append(ContentBlock(type="image", source={
+            image_blocks.append(ContentBlock(type="image", source={
                 "type": "base64", "media_type": im.get("mime", "image/png"), "data": im["b64"],
             }))
+    blocks = list(image_blocks)
+    # 有文字才加文字块（图在前，文字在后；纯生图无描述时不加空块）
+    if text.strip() or not image_blocks:
+        blocks.append(ContentBlock(type="text", text=text))
 
     return ClaudeResponse(
         id=msg_id,

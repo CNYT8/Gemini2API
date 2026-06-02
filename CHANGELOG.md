@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+## [1.6.13] - 2026-06-02
+
+### Changed
+- 🖼️ **生图回复改为「图片在前」+ 紧凑排版**：生图成功时图片排在最前面，紧跟文字描述（单换行，去掉之前的多余空行），不再是"一大段文字+空行+图片"。三家接口（OpenAI/Claude/Gemini）一致：OpenAI/Gemini 图片 markdown 在前、Claude image block 在文字 block 前。
+- 🎯 **生图意图识别大幅增强**：扩充关键词（画/生成/设计/做/来张…图、海报/插画/logo/照片、poster/image/draw 等），并新增宽松兜底判断（图像名词+产出动词组合），让"设计一张海报""来张柴犬图""帮我弄个logo"等口语化生图请求也能正确走生图路径、图片排在前面，避免漏识别导致图片跑到文字后面。
+
+### Fixed
+- 🧹 **过滤更多 googleusercontent 占位 URL**：除 `image_generation_content` 外，新增过滤 `image_retrieval`/`image_collection`（Gemini 走"图片检索"而非"生成"时返回的占位 URL，客户端无法访问）。过滤后若无有效图片，返回友好提示引导用明确生图指令，而不是返回空内容或无效网址。
+
 ## [1.6.12] - 2026-06-02
 
 ### Fixed

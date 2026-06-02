@@ -136,8 +136,8 @@ async def generate_content(model: str, req: GeminiRequest, request: Request):
     prompt_tokens = estimate_tokens(prompt)
     completion_tokens = estimate_tokens(response_text)
 
-    # parts：文本 + AI 生成图片。inlineData（Gemini 原生 base64）给能解析的客户端，
-    # 同时在文本里附本地托管 URL，方便不渲染 inlineData 的客户端拿到可点链接。
+    # parts：图片在前 + 文本。inlineData（Gemini 原生 base64）给能解析的客户端，
+    # 同时图片本地托管 URL 排在文字前面（图在前），方便不渲染 inlineData 的客户端拿到可点链接。
     gen_images = result.get("images") or []
     base = str(request.base_url).rstrip("/")
     text_part = response_text
@@ -145,7 +145,7 @@ async def generate_content(model: str, req: GeminiRequest, request: Request):
         urls = "\n".join(f"![generated image]({base}/images/{im['id']})"
                          for im in gen_images if im.get("id"))
         if urls:
-            text_part = (response_text + "\n\n" + urls) if response_text.strip() else urls
+            text_part = (urls + "\n" + response_text.strip()) if response_text.strip() else urls
     # 工具调用 part 优先；否则文本 part + 图片
     if tool_parts:
         parts = tool_parts
