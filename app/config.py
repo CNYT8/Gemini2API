@@ -8,7 +8,7 @@ from pydantic import field_validator
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "1.6.10"
+APP_VERSION = "1.6.11"
 
 
 def _generate_api_key() -> str:
@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     api_key: str = ""
     refresh_interval: int = 5
     max_retries: int = 3
+    # 遇到 5xx（尤其 Google 数据中心 IP 的 503 "Sorry" 限流）时：
+    # - 同账号只快速重试 same_account_5xx_retries 次（应对瞬时抖动），不长退避空耗
+    # - 仍失败则换下一个 active 账号重试（failover），单账号无可换则报错
+    # - 被 5xx 限流的账号进入 failover_cooldown 秒冷却，期间不优先选它（不标 expired）
+    same_account_5xx_retries: int = 1
+    failover_cooldown: float = 30.0
     port: int = 5918
     log_level: str = "info"
     rate_limit_enabled: bool = False

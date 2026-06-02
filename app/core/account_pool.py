@@ -7,11 +7,16 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from app.core.gemini_client import GeminiWebClient
+from app.core.gemini_client import GeminiWebClient, HTTPStatusError
 from app.config import settings
 from app.core.usage_metrics import live_metrics
 
 logger = logging.getLogger(__name__)
+
+
+def _is_5xx(exc: Exception) -> bool:
+    """判断异常是否为 5xx（含 Google 503 限流），这类可换账号 failover 重试。"""
+    return isinstance(exc, HTTPStatusError) and 500 <= exc.status_code < 600
 
 
 class AccountStatus(str, Enum):
@@ -39,6 +44,8 @@ class Account:
     active_requests: int = 0
     last_used: datetime | None = None
     last_error: str = ""
+    # 被 5xx/503 限流后的冷却截止时间戳（loop.time()）；冷却期内不优先选，但不算 expired
+    cooldown_until: float = 0.0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     client: GeminiWebClient | None = field(default=None, repr=False)
 
@@ -115,18 +122,26 @@ class AccountPool:
             account.status = AccountStatus.EXPIRED
             logger.warning(f"Account {account.id} ({account.label}) failed to initialize")
 
-    def _find_available(self) -> Account | None:
-        """在已持有 self._cond 锁的前提下，挑一个未满载的 ACTIVE 账号；没有则返回 None。"""
-        available = [
+    def _find_available(self, exclude: set | None = None) -> Account | None:
+        """在已持有 self._cond 锁的前提下，挑一个未满载的 ACTIVE 账号；没有则返回 None。
+        exclude: 本次 failover 中已试过失败的账号 id，跳过。
+        冷却中的账号（被 5xx 限流）降级为兜底：优先选非冷却的，全冷却了才选冷却的。
+        """
+        exclude = exclude or set()
+        now = asyncio.get_event_loop().time()
+        candidates = [
             a for a in self._accounts
             if a.status == AccountStatus.ACTIVE
             and a.active_requests < self._max_concurrent
+            and a.id not in exclude
         ]
-        if not available:
+        if not candidates:
             return None
+        fresh = [a for a in candidates if a.cooldown_until <= now]
+        pool = fresh if fresh else candidates  # 优先非冷却；全冷却则用冷却的兜底
         if self._strategy == RotationStrategy.ROUND_ROBIN:
-            return self._pick_round_robin(available)
-        return self._pick_failover(available)
+            return self._pick_round_robin(pool)
+        return self._pick_failover(pool)
 
     async def _try_recover_expired(self):
         """无可用账号时，尝试恢复 EXPIRED 账号（已持有锁）。"""
@@ -141,16 +156,21 @@ class AccountPool:
                 except Exception:
                     pass
 
-    async def acquire(self) -> Account:
+    async def acquire(self, exclude: set | None = None) -> Account:
         loop = asyncio.get_event_loop()
         deadline = loop.time() + self._acquire_timeout
         async with self._cond:
             while True:
-                account = self._find_available()
+                account = self._find_available(exclude)
                 if account is not None:
                     account.active_requests += 1
                     account.last_used = datetime.now(timezone.utc)
                     return account
+
+                # failover 场景：主动排除了部分账号后没有候选了 → 不排队不救活，
+                # 立即报错让 failover 循环停止（已无其他账号可试）
+                if exclude:
+                    raise RuntimeError("No more accounts to failover to")
 
                 # 没有空闲槽位。区分两种情况：
                 #   ① 有 ACTIVE 账号但都满载 → 排队等 release 唤醒（不要跑网络恢复，
@@ -182,12 +202,20 @@ class AccountPool:
                         f"waited {self._acquire_timeout}s"
                     )
 
-    async def release(self, account: Account, success: bool):
+    async def release(self, account: Account, success: bool, cooldown: bool = False):
         async with self._cond:
             account.active_requests = max(0, account.active_requests - 1)
             account.request_count += 1
             if success:
                 account.consecutive_failures = 0
+            elif cooldown:
+                # 5xx/503 限流：不是账号坏，只是被 Google 临时限流。
+                # 设短期冷却（期间降级不优先选），不累积失败、不标 expired。
+                account.error_count += 1
+                account.cooldown_until = asyncio.get_event_loop().time() + settings.failover_cooldown
+                logger.warning(
+                    f"Account {account.id} cooled down for {settings.failover_cooldown}s (5xx rate-limit)"
+                )
             else:
                 account.error_count += 1
                 account.consecutive_failures += 1
@@ -290,6 +318,7 @@ class AccountPool:
                 "error_count": a.error_count,
                 "active_requests": a.active_requests,
                 "last_used": a.last_used.isoformat() if a.last_used else None,
+                "cooling_down": a.cooldown_until > asyncio.get_event_loop().time(),
                 "models": self.models if a.client else [],
                 "models_count": len(self.models) if a.client else 0,
             })
@@ -303,38 +332,78 @@ class AccountPool:
 
     async def generate(self, prompt: str, model: str, conversation_id: str = "",
                        attachments: list | None = None) -> dict:
-        account = await self.acquire()
-        t0 = time.time()
-        try:
-            result = await account.client.generate(prompt, model, conversation_id, attachments)
-            latency_ms = (time.time() - t0) * 1000
-            live_metrics.record_request(model, latency_ms)
-            await self.release(account, success=True)
-            return result
-        except Exception:
-            latency_ms = (time.time() - t0) * 1000
-            live_metrics.record_request(model, latency_ms)
-            await self.release(account, success=False)
-            raise
+        # failover：某账号被 5xx（如 Google 503 限流）打回时，换下一个 active 账号重试，
+        # 直到成功或无更多账号可试。被限流账号进入冷却，不立即标 expired。
+        tried: set = set()
+        last_err = None
+        while True:
+            try:
+                account = await self.acquire(exclude=tried if tried else None)
+            except RuntimeError:
+                # 没有（更多）账号可用：抛出最后一次 5xx 错误（若有），否则抛 acquire 的错
+                if last_err is not None:
+                    raise last_err
+                raise
+            t0 = time.time()
+            try:
+                result = await account.client.generate(prompt, model, conversation_id, attachments)
+                live_metrics.record_request(model, (time.time() - t0) * 1000)
+                await self.release(account, success=True)
+                return result
+            except Exception as e:
+                live_metrics.record_request(model, (time.time() - t0) * 1000)
+                if _is_5xx(e):
+                    # 5xx 限流：冷却该账号，换下一个重试
+                    last_err = e
+                    tried.add(account.id)
+                    await self.release(account, success=False, cooldown=True)
+                    logger.warning(f"Account {account.id} got {e}; failing over (tried={len(tried)})")
+                    continue
+                await self.release(account, success=False)
+                raise
 
     async def generate_stream(self, prompt: str, model: str, conversation_id: str = "",
                               attachments: list | None = None):
         """真流式：持有账号槽位直到整个流结束，再 release。
         逐块产出 {"type":"delta","text":增量} ，最后产出 {"type":"final", ...}（含会话ID/图片）。
+
+        failover：仅在「尚未向客户端 yield 任何内容前」遇到 5xx（如 503 限流）才换账号重试
+        （已经吐出部分内容后再换账号会导致重复，故此时只能终止）。
         """
-        account = await self.acquire()
-        t0 = time.time()
-        success = True
-        try:
-            async for evt in account.client.generate_stream(prompt, model, conversation_id, attachments):
-                yield evt
-        except Exception:
-            success = False
-            raise
-        finally:
-            latency_ms = (time.time() - t0) * 1000
-            live_metrics.record_request(model, latency_ms)
-            await self.release(account, success=success)
+        tried: set = set()
+        last_err = None
+        while True:
+            try:
+                account = await self.acquire(exclude=tried if tried else None)
+            except RuntimeError:
+                if last_err is not None:
+                    raise last_err
+                raise
+            t0 = time.time()
+            emitted_any = False
+            failover = False
+            try:
+                async for evt in account.client.generate_stream(prompt, model, conversation_id, attachments):
+                    emitted_any = True
+                    yield evt
+            except Exception as e:
+                live_metrics.record_request(model, (time.time() - t0) * 1000)
+                # 只有「还没吐任何内容」+「是5xx」+「还有别的账号」才 failover
+                if _is_5xx(e) and not emitted_any:
+                    last_err = e
+                    tried.add(account.id)
+                    await self.release(account, success=False, cooldown=True)
+                    logger.warning(f"Account {account.id} got {e} before first chunk; stream failing over (tried={len(tried)})")
+                    failover = True
+                else:
+                    await self.release(account, success=False)
+                    raise
+            else:
+                live_metrics.record_request(model, (time.time() - t0) * 1000)
+                await self.release(account, success=True)
+                return
+            if failover:
+                continue
 
     @property
     def models(self) -> list[str]:

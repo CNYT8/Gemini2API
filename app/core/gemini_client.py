@@ -702,6 +702,9 @@ class GeminiWebClient:
             )
 
         last_err = None
+        # 5xx（含 Google 503 限流）同账号只快速重试少量次，不长退避空耗；
+        # 仍失败则抛出（带 status_code），由 account_pool 换账号 failover。
+        max_5xx = max(0, settings.same_account_5xx_retries)
         for attempt in range(settings.max_retries):
             try:
                 return await self._send_request(prompt, model, conversation_id, attachments)
@@ -712,8 +715,11 @@ class GeminiWebClient:
                     if status in (401, 403):
                         self._healthy = False
                     raise
-                wait = 2 ** attempt
-                logger.warning(f"Attempt {attempt+1}: status {status}, wait {wait}s")
+                # 5xx：同账号快速重试上限内短退避；超过则直接抛给 pool 做 failover
+                if attempt >= max_5xx:
+                    raise
+                wait = 0.5 * (attempt + 1)
+                logger.warning(f"Attempt {attempt+1}: status {status}, quick retry in {wait}s (then failover)")
                 await asyncio.sleep(wait)
             except Exception as e:
                 last_err = e
