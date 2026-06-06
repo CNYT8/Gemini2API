@@ -994,6 +994,75 @@ curl http://localhost:5918/admin/logs/log-123 \
   -H "Authorization: Bearer sk-你的API密钥"
 ```
 
+### GET /admin/web-chats
+
+列出账号在 Gemini 网页端的会话（只读）。
+
+用于查看各账号在 gemini.google.com 堆积的会话列表，包括会话 ID、标题、时间戳、是否置顶等信息。
+
+**请求**：
+```bash
+curl http://localhost:5918/admin/web-chats \
+  -H "Authorization: Bearer sk-你的API密钥"
+```
+
+**响应**：
+```json
+{
+  "accounts": [
+    {
+      "account_id": "account-0",
+      "chats": [
+        {
+          "cid": "chat-id-1",
+          "title": "对话标题",
+          "timestamp": "2026-06-06T10:30:00Z",
+          "pinned": false
+        },
+        {
+          "cid": "chat-id-2",
+          "title": "置顶会话",
+          "timestamp": "2026-06-05T15:20:00Z",
+          "pinned": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+### POST /admin/cleanup-web-chats
+
+手动触发清理超过指定时长的网页会话。
+
+后台异步执行清理任务，立即返回。可配置保留时长和是否跳过置顶会话。清理任务会循环执行直到所有超期会话被删除。
+
+**请求体**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `keep_hours` | number | 否 | 保留多少小时内的会话，默认 24 |
+| `skip_pinned` | boolean | 否 | 是否跳过置顶会话，默认 true |
+
+**请求**：
+```bash
+curl -X POST http://localhost:5918/admin/cleanup-web-chats \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
+  -d '{
+    "keep_hours": 24,
+    "skip_pinned": true
+  }'
+```
+
+**响应**：
+```json
+{
+  "status": "started",
+  "message": "Cleanup task started in background"
+}
+```
+
 ### GET /admin/model-mapping
 
 获取所有模型映射。

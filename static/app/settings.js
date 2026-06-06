@@ -11,7 +11,8 @@ function getGroupTitle(groupKey) {
     rate_limiting: 'settings.group.rateLimit',
     health_check: 'settings.group.healthCheck',
     account_management: 'settings.group.accounts',
-    usage_stats: 'settings.group.stats'
+    usage_stats: 'settings.group.stats',
+    chat_cleanup: 'settings.group.chatCleanup'
   };
   return t(map[groupKey] || groupKey);
 }
@@ -21,7 +22,8 @@ const GROUP_ICONS = {
   rate_limiting: 'fa-shield-alt',
   health_check: 'fa-heartbeat',
   account_management: 'fa-users-cog',
-  usage_stats: 'fa-chart-line'
+  usage_stats: 'fa-chart-line',
+  chat_cleanup: 'fa-broom'
 };
 
 function getFieldLabel(key) {
@@ -38,7 +40,11 @@ function getFieldLabel(key) {
     max_concurrent_per_account: 'settings.field.maxConcurrent',
     usage_stats_enabled: 'settings.field.usageStatsEnabled',
     usage_stats_interval: '快照间隔(秒)',
-    usage_stats_retention_days: '数据保留天数'
+    usage_stats_retention_days: '数据保留天数',
+    chat_cleanup_enabled: 'settings.field.chatCleanupEnabled',
+    chat_cleanup_keep_hours: 'settings.field.chatCleanupKeepHours',
+    chat_cleanup_interval_hours: 'settings.field.chatCleanupInterval',
+    chat_cleanup_skip_pinned: 'settings.field.chatCleanupSkipPinned'
   };
   return map[key] ? (map[key].startsWith('settings.') ? t(map[key]) : map[key]) : key;
 }

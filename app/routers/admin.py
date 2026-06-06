@@ -250,3 +250,44 @@ async def perform_update():
 
     threading.Thread(target=_update, daemon=True).start()
     return {"status": "ok", "message": "Update started, service will restart shortly..."}
+
+
+class CleanupWebChatsRequest(BaseModel):
+    keep_hours: float = 24.0
+    skip_pinned: bool = True
+
+
+@router.get("/web-chats")
+async def list_web_chats(recent: int = 300):
+    """列出账号在 Gemini 网页端的会话（只读，用于排查/确认清理范围）。"""
+    try:
+        return {"accounts": await account_pool.list_web_chats(recent=recent)}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+_cleanup_bg_tasks: set = set()
+
+
+@router.post("/cleanup-web-chats")
+async def cleanup_web_chats(req: CleanupWebChatsRequest = None):
+    """清理超过 keep_hours 的网页端会话（置顶可保留）。手动触发。
+    后台异步执行立即返回：清理重度堆积账号可能耗时数分钟（每删一个间隔 0.3s），
+    同步等待会让 HTTP 请求超时。结果在服务端日志可见。
+    """
+    req = req or CleanupWebChatsRequest()
+    import asyncio
+
+    async def _run():
+        try:
+            await account_pool.cleanup_web_chats(
+                keep_hours=req.keep_hours, skip_pinned=req.skip_pinned
+            )
+        except Exception as e:
+            logger.warning(f"[cleanup-web-chats] 后台清理异常: {e}")
+
+    task = asyncio.create_task(_run())
+    _cleanup_bg_tasks.add(task)
+    task.add_done_callback(_cleanup_bg_tasks.discard)
+    return {"status": "started", "message": "清理已在后台开始，结果见服务端日志"}
+

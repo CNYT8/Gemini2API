@@ -71,6 +71,31 @@ async def lifespan(app: FastAPI):
 
     image_cleanup_task = asyncio.create_task(image_cleanup_loop())
 
+    async def web_chat_cleanup_loop():
+        # 定时清理 Gemini 网页端堆积的会话（API 每次对话都会在网页端留记录）。
+        # 保留窗口 >> 反代上下文窗口(6h)，不会误删正在续接的活跃对话；置顶可保留。
+        interval = max(1, settings.chat_cleanup_interval_hours) * 3600
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                results = await account_pool.cleanup_web_chats(
+                    keep_hours=settings.chat_cleanup_keep_hours,
+                    skip_pinned=settings.chat_cleanup_skip_pinned,
+                )
+                total_deleted = sum(r.get("deleted", 0) for r in results if isinstance(r, dict))
+                if total_deleted:
+                    logger.info(f"[web_chat_cleanup] 清理网页会话 {total_deleted} 个")
+            except Exception as e:
+                logger.warning(f"[web_chat_cleanup] 清理异常: {e}")
+
+    web_chat_cleanup_task = None
+    if settings.chat_cleanup_enabled:
+        web_chat_cleanup_task = asyncio.create_task(web_chat_cleanup_loop())
+        logger.info(
+            f"Web chat cleanup loop started "
+            f"(keep {settings.chat_cleanup_keep_hours}h, every {settings.chat_cleanup_interval_hours}h)"
+        )
+
     version_task = None
     if settings.version_sync_enabled:
         version_task = asyncio.create_task(version_sync_loop())
@@ -98,6 +123,12 @@ async def lifespan(app: FastAPI):
         await image_cleanup_task
     except asyncio.CancelledError:
         pass
+    if web_chat_cleanup_task:
+        web_chat_cleanup_task.cancel()
+        try:
+            await web_chat_cleanup_task
+        except asyncio.CancelledError:
+            pass
     app.state.log_store.flush()
     if snapshot_task:
         snapshot_task.cancel()

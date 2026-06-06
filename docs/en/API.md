@@ -940,6 +940,74 @@ curl -X DELETE http://localhost:5918/admin/model-mapping/gpt-4o \
 }
 ```
 
+### GET /admin/web-chats
+
+List the account's Gemini web sessions (read-only). Every API conversation creates a record on gemini.google.com. This endpoint returns session lists per account, including conversation ID, title, timestamp, and pinned status.
+
+**Request:**
+```bash
+curl http://localhost:5918/admin/web-chats \
+  -H "Authorization: Bearer sk-your-api-key"
+```
+
+**Response:**
+```json
+{
+  "accounts": [
+    {
+      "account_id": "account-0",
+      "sessions": [
+        {
+          "cid": "c_abc123xyz",
+          "title": "Conversation about Python",
+          "timestamp": "2026-06-06T10:30:00Z",
+          "pinned": false
+        },
+        {
+          "cid": "c_def456uvw",
+          "title": "Important research notes",
+          "timestamp": "2026-06-05T14:20:00Z",
+          "pinned": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+### POST /admin/cleanup-web-chats
+
+Manually trigger cleanup of web sessions older than the specified retention window. This endpoint runs the cleanup task asynchronously in the background and returns immediately.
+
+**Request:**
+```bash
+curl -X POST http://localhost:5918/admin/cleanup-web-chats \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "keep_hours": 24,
+    "skip_pinned": true
+  }'
+```
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `keep_hours` | number | No | Retention window in hours (default: 24). Sessions older than this are deleted. |
+| `skip_pinned` | boolean | No | Whether to skip pinned sessions (default: true). |
+
+**Response:**
+```json
+{
+  "status": "started",
+  "message": "Cleanup task started in background"
+}
+```
+
+> [!NOTE]
+> The cleanup task runs asynchronously and loops until all old sessions across all accounts are deleted. Check logs for completion status and deleted session counts.
+
 ## System Endpoints
 
 ### GET /health

@@ -8,7 +8,7 @@ from pydantic import field_validator
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "1.6.14"
+APP_VERSION = "1.6.15"
 
 
 def _generate_api_key() -> str:
@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     usage_stats_interval: int = 300
     usage_stats_retention_days: int = 30
     model_whitelist: str = ""
+    chat_cleanup_enabled: bool = True
+    chat_cleanup_keep_hours: float = 24.0
+    chat_cleanup_interval_hours: float = 6.0
+    chat_cleanup_skip_pinned: bool = True
 
     @field_validator("gemini_psid")
     @classmethod

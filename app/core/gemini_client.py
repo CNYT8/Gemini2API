@@ -594,6 +594,170 @@ class GeminiWebClient:
             logger.warning(f"Heartbeat error: {e}")
             return False
 
+    async def _batchexecute(self, rpc_id: str, payload_str: str) -> str | None:
+        """通用 batchexecute 调用，复用心跳的 URL params + headers 模板。
+        成功返回响应文本，失败返回 None。payload_str 是已 json.dumps 的内层 payload。
+        """
+        if not self._session_token:
+            return None
+        try:
+            await apply_jitter("api_call")
+            await self._ensure_session_current()
+            self._clear_session_cookies()
+
+            req_data = json.dumps([[[rpc_id, payload_str, None, "generic"]]])
+            form_data = {"f.req": req_data, "at": self._session_token}
+            params = {
+                "rpcids": rpc_id,
+                "hl": "en",
+                "_reqid": str(_rand_reqid()),
+                "rt": "c",
+                "source-path": "/app",
+            }
+            cookies = self._get_cookies()
+            headers = self._get_headers("POST", content_type="application/x-www-form-urlencoded")
+            headers.update({
+                "x-goog-ext-525001261-jspb": "[1,null,null,null,null,null,null,null,[4]]",
+                "x-goog-ext-73010989-jspb": "[0]",
+                "X-Same-Domain": "1",
+            })
+            resp = await self._http.post(
+                BATCHEXECUTE_URL, params=params, data=form_data, cookies=cookies, headers=headers
+            )
+            self._cookie_jar.update_from_response(resp)
+            if resp.status_code == 200:
+                return resp.text
+            logger.warning(f"batchexecute {rpc_id} returned {resp.status_code}")
+            return None
+        except Exception as e:
+            logger.warning(f"batchexecute {rpc_id} error: {e}")
+            return None
+
+    @staticmethod
+    def _parse_wrb_body(raw: str, rpc_id: str):
+        """从 batchexecute 响应里取出指定 rpc 的 body（已 json.loads）。找不到返回 None。"""
+        if not raw:
+            return None
+        for line in raw.strip().split("\n"):
+            line = line.strip()
+            if not line.startswith("[["):
+                continue
+            try:
+                outer = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            for item in outer:
+                if not (isinstance(item, list) and len(item) >= 3 and item[0] == "wrb.fr"):
+                    continue
+                # item[1] 是 rpc id（有时为 None），item[2] 是 body 字符串
+                if item[1] not in (rpc_id, None):
+                    continue
+                body_str = item[2]
+                if not isinstance(body_str, str):
+                    continue
+                try:
+                    return json.loads(body_str)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+        return None
+
+    async def list_web_chats(self, recent: int = 300) -> list[dict]:
+        """列出账号在 Gemini 网页端的会话（MaZiqc / LIST_CHATS）。
+        发两次（[N,None,[1,None,1]] + [N,None,[0,None,1]]）合并去重，
+        每项解析 cid=[0] title=[1] pinned=[2] timestamp=[5]([秒,纳秒])。
+        返回 [{cid, title, pinned, ts}]，按 ts 降序。失败返回 []。
+        """
+        rpc_id = "MaZiqc"
+        seen: dict[str, dict] = {}
+        for flag in (1, 0):
+            payload = json.dumps([recent, None, [flag, None, 1]])
+            raw = await self._batchexecute(rpc_id, payload)
+            body = self._parse_wrb_body(raw, rpc_id)
+            if not isinstance(body, list) or len(body) < 3:
+                continue
+            chat_list = body[2]
+            if not isinstance(chat_list, list):
+                continue
+            for chat in chat_list:
+                if not (isinstance(chat, list) and chat and isinstance(chat[0], str)):
+                    continue
+                cid = chat[0]
+                if cid in seen:
+                    continue
+                title = chat[1] if len(chat) > 1 and isinstance(chat[1], str) else ""
+                pinned = bool(chat[2]) if len(chat) > 2 else False
+                ts = 0.0
+                if len(chat) > 5 and isinstance(chat[5], list) and chat[5]:
+                    try:
+                        sec = float(chat[5][0])
+                        nanos = float(chat[5][1]) if len(chat[5]) > 1 else 0.0
+                        ts = sec + nanos / 1e9
+                    except (TypeError, ValueError, IndexError):
+                        ts = 0.0
+                seen[cid] = {"cid": cid, "title": title, "pinned": pinned, "ts": ts}
+        return sorted(seen.values(), key=lambda c: c["ts"], reverse=True)
+
+    async def delete_web_chat(self, cid: str) -> bool:
+        """删除一个网页端会话（两步 RPC：GzXR5e -> qWymEb，两步都必须执行）。
+        cid 是 c_xxx 形式的会话 id。两步都返回 200 视为成功。
+        """
+        if not cid or not cid.startswith("c_"):
+            logger.warning(f"delete_web_chat: 无效 cid {cid!r}")
+            return False
+        raw1 = await self._batchexecute("GzXR5e", json.dumps([cid]))
+        if raw1 is None:
+            return False
+        raw2 = await self._batchexecute("qWymEb", json.dumps([cid, [1, None, 0, 1]]))
+        if raw2 is None:
+            return False
+        return True
+
+    async def cleanup_old_web_chats(self, keep_hours: float = 24.0,
+                                    skip_pinned: bool = True) -> dict:
+        """清理超过 keep_hours 的网页端会话（置顶可选跳过）。
+        返回 {listed, deleted, skipped, failed}。
+
+        循环拉取+删除直到没有可删的为止：list_web_chats 单轮有上限（默认300），
+        重度账号堆积可能 >上限，最旧的会话排在列表外永远清不到。每轮删完重新拉，
+        删空一轮（本轮 deleted=0）或达到安全上限就停。
+        keep_hours 下界保护：至少保留 1 小时，防止误传 0/负值清空所有会话。
+        """
+        keep_hours = max(1.0, keep_hours)
+        total_listed = total_deleted = total_skipped = total_failed = 0
+        max_rounds = 50  # 安全上限：单账号最多清 50 轮（每轮最多 300），防极端情况死循环
+        for _ in range(max_rounds):
+            chats = await self.list_web_chats()
+            if not chats:
+                break
+            cutoff = time.time() - keep_hours * 3600
+            round_deleted = 0
+            round_skipped = 0
+            for chat in chats:
+                if skip_pinned and chat.get("pinned"):
+                    total_skipped += 1
+                    round_skipped += 1
+                    continue
+                ts = chat.get("ts", 0.0)
+                # ts<=0 说明时间戳没解析出来，保守跳过不删（避免误删）
+                if ts <= 0 or ts >= cutoff:
+                    total_skipped += 1
+                    round_skipped += 1
+                    continue
+                ok = await self.delete_web_chat(chat["cid"])
+                if ok:
+                    total_deleted += 1
+                    round_deleted += 1
+                else:
+                    total_failed += 1
+                await asyncio.sleep(0.3)  # 轻微间隔，避免触发限流
+            total_listed += len(chats)
+            # 本轮没删任何会话（剩下的要么置顶、要么在保留窗口内）→ 没有更多可清的，停止
+            if round_deleted == 0:
+                break
+        logger.info(f"网页会话清理：deleted={total_deleted} skipped={total_skipped} failed={total_failed}")
+        return {"listed": total_listed, "deleted": total_deleted,
+                "skipped": total_skipped, "failed": total_failed}
+
     def _parse_models_from_status(self, raw: str):
         """从 otAQ7b（GetUserStatus）响应解析账号真实可用模型。
         响应结构：part_body[15] 是模型数组，每项 [model_id, display_name, description]。

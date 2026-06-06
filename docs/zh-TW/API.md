@@ -738,6 +738,65 @@ curl -X DELETE http://localhost:5918/admin/model-mapping/gpt-4o \
   -H "Authorization: Bearer sk-your-api-key"
 ```
 
+### GET /admin/web-chats
+
+列出帳號在 Gemini 網頁端的會話（唯讀）。
+
+**請求：**
+```bash
+curl http://localhost:5918/admin/web-chats \
+  -H "Authorization: Bearer sk-your-api-key"
+```
+
+**回應：**
+```json
+{
+  "chats": [
+    {
+      "id": "chat-xxx",
+      "title": "對話標題",
+      "pinned": false,
+      "created_at": "2026-06-05T12:00:00Z"
+    }
+  ]
+}
+```
+
+### POST /admin/cleanup-web-chats
+
+手動觸發清理超過保留時長的網頁會話。置頂會話不會被刪除，活躍對話不受影響。後台非同步執行，立即回傳。
+
+**請求體：**
+```json
+{
+  "keep_hours": 24,
+  "skip_pinned": true
+}
+```
+
+**參數說明：**
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `keep_hours` | number | ✅ | 保留時長（小時），超過此時長的會話將被刪除 |
+| `skip_pinned` | boolean | ❌ | 是否跳過置頂會話（預設 true） |
+
+**請求：**
+```bash
+curl -X POST http://localhost:5918/admin/cleanup-web-chats \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{"keep_hours": 24, "skip_pinned": true}'
+```
+
+**回應：**
+```json
+{
+  "status": "started",
+  "message": "清理任務已啟動"
+}
+```
+
 ## 系統 API
 
 ### GET /health

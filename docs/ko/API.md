@@ -839,6 +839,65 @@ curl -X POST http://localhost:5918/admin/logs/clear \
   -H "Authorization: Bearer sk-당신의키"
 ```
 
+### GET /admin/web-chats
+
+계정의 Gemini 웹 측 세션 목록 조회 (읽기 전용)
+
+**요청**:
+
+```bash
+curl http://localhost:5918/admin/web-chats \
+  -H "Authorization: Bearer sk-당신의키"
+```
+
+**응답**:
+
+```json
+{
+  "chats": [
+    {
+      "id": "chat-xxx",
+      "title": "세션 제목",
+      "created": "2026-06-06T10:00:00Z",
+      "pinned": false
+    }
+  ],
+  "total": 50
+}
+```
+
+### POST /admin/cleanup-web-chats
+
+보존 기간보다 오래된 웹 측 세션 정리 수동 트리거 (백그라운드 비동기 실행)
+
+**요청**:
+
+```bash
+curl -X POST http://localhost:5918/admin/cleanup-web-chats \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-당신의키" \
+  -d '{
+    "keep_hours": 24,
+    "skip_pinned": true
+  }'
+```
+
+**요청 파라미터**:
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| `keep_hours` | integer | ❌ | 보존 기간(시간), 이보다 오래된 세션 삭제 (기본값: 24) |
+| `skip_pinned` | boolean | ❌ | 고정 세션 건너뛰기 (기본값: true) |
+
+**응답**:
+
+```json
+{
+  "status": "started",
+  "message": "Web chat cleanup started in background"
+}
+```
+
 ### GET /health
 
 헬스 체크 (Docker 프로브 호환)

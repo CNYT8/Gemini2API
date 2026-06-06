@@ -886,6 +886,66 @@ curl http://localhost:5918/health
 }
 ```
 
+### GET /admin/web-chats
+
+アカウントの Gemini ウェブセッション一覧を取得します（読み取り専用）。
+
+**リクエスト:**
+
+```bash
+curl http://localhost:5918/admin/web-chats \
+  -H "Authorization: Bearer sk-あなたのキー"
+```
+
+**レスポンス:**
+
+```json
+{
+  "chats": [
+    {
+      "id": "chat-xxx",
+      "title": "会話のタイトル",
+      "created_at": "2025-05-17T10:30:00Z",
+      "updated_at": "2025-05-17T12:00:00Z",
+      "is_pinned": false
+    }
+  ],
+  "total": 10
+}
+```
+
+### POST /admin/cleanup-web-chats
+
+`keep_hours` より古いウェブセッションのクリーンアップを手動でトリガーします。バックグラウンドで非同期実行され、即座にステータスを返します。
+
+**リクエスト:**
+
+```bash
+curl -X POST http://localhost:5918/admin/cleanup-web-chats \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-あなたのキー" \
+  -d '{
+    "keep_hours": 24,
+    "skip_pinned": true
+  }'
+```
+
+**リクエストパラメータ:**
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `keep_hours` | integer | ❌ | 保持時間（時間単位、デフォルト: 24） |
+| `skip_pinned` | boolean | ❌ | ピン留めセッションをスキップ（デフォルト: true） |
+
+**レスポンス:**
+
+```json
+{
+  "status": "started",
+  "message": "Cleanup task started in background"
+}
+```
+
 ## エラーコード
 
 API エラーは以下のコードで返されます。

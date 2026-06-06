@@ -110,6 +110,7 @@ Configure runtime behavior:
    - **Health Checks**: Interval and enabled status
    - **Cookie Management**: Refresh interval, rotation strategy
    - **Statistics**: Enable/disable usage tracking
+   - **Web Session Cleanup**: Enable automatic cleanup of accumulated Gemini web sessions. Every API conversation leaves a record on gemini.google.com that piles up over time. Configure retention window (default 24h, far larger than the 6h context window so active conversations are safe), cleanup interval (default 6h), and whether to skip pinned sessions (default: skip). The background task loops until all old sessions are deleted, handling accounts with hundreds of accumulated sessions.
 3. Click **Save** to apply changes immediately
 
 All changes take effect without restarting the service.

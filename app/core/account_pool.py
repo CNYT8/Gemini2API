@@ -288,6 +288,34 @@ class AccountPool:
                 results.append({"account_id": account.id, "valid": False, "error": str(e)})
         return results
 
+    async def list_web_chats(self, recent: int = 300) -> list[dict]:
+        """列出所有 active 账号的网页端会话（只读，用于验证/排查）。"""
+        out = []
+        for account in self._accounts:
+            if account.status != AccountStatus.ACTIVE or not account.client:
+                continue
+            try:
+                chats = await account.client.list_web_chats(recent=recent)
+                out.append({"account_id": account.id, "count": len(chats), "chats": chats})
+            except Exception as e:
+                out.append({"account_id": account.id, "error": str(e)})
+        return out
+
+    async def cleanup_web_chats(self, keep_hours: float = 24.0, skip_pinned: bool = True) -> list[dict]:
+        """对所有 active 账号清理超过 keep_hours 的网页会话（置顶可保留）。"""
+        out = []
+        for account in self._accounts:
+            if account.status != AccountStatus.ACTIVE or not account.client:
+                continue
+            try:
+                res = await account.client.cleanup_old_web_chats(
+                    keep_hours=keep_hours, skip_pinned=skip_pinned
+                )
+                out.append({"account_id": account.id, **res})
+            except Exception as e:
+                out.append({"account_id": account.id, "error": str(e)})
+        return out
+
     def set_strategy(self, strategy: str):
         self._strategy = RotationStrategy(strategy)
 
