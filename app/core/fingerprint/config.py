@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import Lock
 
+from app.config import settings
+from app.utils.atomic_io import atomic_write_json
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = Path("data/fingerprint.json")
@@ -45,15 +48,32 @@ class FingerprintConfigManager:
         self._lock = Lock()
 
     def load(self) -> FingerprintConfig:
+        data = None
         if self._path.exists():
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-        else:
+            # 读容错：损坏/截断的配置文件不应让客户端初始化崩溃；
+            # 解析失败时回退到默认配置并原子重写（参考 cookie_jar VULN-010 读容错）
+            try:
+                data = json.loads(self._path.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning(f"指纹配置损坏，回退默认配置: {e}")
+                data = None
+        if data is None:
             data = self._default_data()
             self._save(data)
             logger.info(f"已生成默认指纹配置: {self._path}")
 
+        # 结构容错：即使 JSON 合法，缺字段/结构异常也不应让客户端初始化崩溃，
+        # 解析失败同样回退默认配置并原子重写
+        try:
+            parsed = self._parse(data)
+        except Exception as e:
+            logger.warning(f"指纹配置结构异常，回退默认配置: {e}")
+            data = self._default_data()
+            self._save(data)
+            parsed = self._parse(data)
+
         with self._lock:
-            self._config = self._parse(data)
+            self._config = parsed
         logger.info(
             f"指纹配置已加载: Chrome {self._config.chrome.major} "
             f"({self._config.chrome.impersonate_target})"
@@ -87,10 +107,9 @@ class FingerprintConfigManager:
         self._save(data)
 
     def _save(self, data: dict):
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        # 原子落盘（临时文件 + os.replace），避免后台版本同步写入中途崩溃/断电
+        # 导致 fingerprint.json 被截断成半截 JSON（VULN-010）
+        atomic_write_json(self._path, data, indent=2, ensure_ascii=False)
 
     def _parse(self, data: dict) -> FingerprintConfig:
         cv = data["chrome_version"]
@@ -171,4 +190,5 @@ class FingerprintConfigManager:
         }
 
 
-fingerprint_config = FingerprintConfigManager()
+# 尊重 settings.fingerprint_config_path，而非硬编码 DEFAULT_CONFIG_PATH
+fingerprint_config = FingerprintConfigManager(Path(settings.fingerprint_config_path))

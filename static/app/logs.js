@@ -3,6 +3,7 @@
  */
 
 import { apiCall } from './auth.js';
+import { escapeHtml } from './utils.js';
 
 let pollTimer = null;
 let currentDirection = 'all';
@@ -154,14 +155,16 @@ function renderTable(records) {
         const latency = r.latency_ms ? Math.round(r.latency_ms) + 'ms' : '-';
         const selected = r.id === selectedRecordId ? ' selected' : '';
 
-        return '<tr class="log-row' + selected + '" data-id="' + r.id + '">'
-            + '<td>' + time + '</td>'
-            + '<td><span class="badge ' + dirClass + '">' + dirLabel + '</span></td>'
-            + '<td>' + r.method + '</td>'
-            + '<td>' + truncatePath(r.path) + '</td>'
-            + '<td><span class="status-code ' + statusClass + '">' + (r.status || '-') + '</span></td>'
-            + '<td>' + latency + '</td>'
-            + '<td>' + (r.model || '-') + '</td>'
+        // 安全：r.path/r.method/r.model 等字段来自真实 HTTP 请求（攻击者可控），
+        // 渲染前一律 escapeHtml 转义，防止存储型 XSS（如 path 内的 <svg onload=...>）。
+        return '<tr class="log-row' + selected + '" data-id="' + escapeHtml(String(r.id ?? '')) + '">'
+            + '<td>' + escapeHtml(time) + '</td>'
+            + '<td><span class="badge ' + dirClass + '">' + escapeHtml(dirLabel) + '</span></td>'
+            + '<td>' + escapeHtml(String(r.method ?? '')) + '</td>'
+            + '<td>' + escapeHtml(truncatePath(r.path)) + '</td>'
+            + '<td><span class="status-code ' + statusClass + '">' + escapeHtml(String(r.status ?? '-')) + '</span></td>'
+            + '<td>' + escapeHtml(latency) + '</td>'
+            + '<td>' + escapeHtml(String(r.model ?? '-')) + '</td>'
             + '</tr>';
     }).join('');
 

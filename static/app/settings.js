@@ -1,9 +1,15 @@
 import { apiCall } from './auth.js';
-import { showToast } from './utils.js';
+import { showToast, escapeHtml } from './utils.js';
 import { t } from './i18n.js';
 
 let originalSettings = {};
 let modelMappings = {};
+
+// 双引号属性上下文专用转义：escapeHtml(textContent 实现) 不会转义 ASCII 双引号，
+// 直接拼入 value="..."/data-*="..." 仍可被 `"` 逸出注入事件属性，故额外转义双引号。
+function escapeAttr(str) {
+  return escapeHtml(String(str ?? '')).replace(/"/g, '&quot;');
+}
 
 function getGroupTitle(groupKey) {
   const map = {
@@ -121,10 +127,15 @@ function renderModelMapping() {
   html += '<div class="mapping-header"><span data-i18n="settings.requestModel">' + t('settings.requestModel') + '</span><span data-i18n="settings.actualModel">' + t('settings.actualModel') + '</span><span></span></div>';
 
   for (const [alias, target] of entries) {
-    html += '<div class="mapping-row" data-alias="' + alias + '">';
-    html += '<input type="text" class="form-control mapping-alias" value="' + alias + '" readonly>';
-    html += '<input type="text" class="form-control mapping-target" value="' + target + '">';
-    html += '<button class="btn-icon btn-delete-mapping" data-alias="' + alias + '"><i class="fas fa-trash"></i></button>';
+    // 安全：alias/target 为用户可控且持久化（POST /admin/model-mapping 不做 HTML 过滤），
+    // 拼入 innerHTML 前一律 escapeHtml 转义；属性值与 data-alias 同样转义，
+    // 既防止属性逸出型存储 XSS，也避免引号污染 data-alias 导致 save/delete 取错别名。
+    const aliasEsc = escapeAttr(alias);
+    const targetEsc = escapeAttr(target);
+    html += '<div class="mapping-row" data-alias="' + aliasEsc + '">';
+    html += '<input type="text" class="form-control mapping-alias" value="' + aliasEsc + '" readonly>';
+    html += '<input type="text" class="form-control mapping-target" value="' + targetEsc + '">';
+    html += '<button class="btn-icon btn-delete-mapping" data-alias="' + aliasEsc + '"><i class="fas fa-trash"></i></button>';
     html += '</div>';
   }
 

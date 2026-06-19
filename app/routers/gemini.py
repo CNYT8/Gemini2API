@@ -5,6 +5,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.config import settings
 from app.core.account_pool import account_pool as gemini_client
 from app.core.stream import split_into_chunks
 from app.models.gemini import (
@@ -24,6 +25,21 @@ from app.core.limiter import limiter, dynamic_rate_limit, rate_limit_exempt
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Gemini"])
+
+
+def _whitelist_set() -> set[str] | None:
+    """解析 MODEL_WHITELIST（逗号分隔）为集合；为空返回 None 表示不过滤。
+    白名单条目按裸模型名匹配（兼容传入带 `models/` 前缀的写法）。"""
+    raw = (settings.model_whitelist or "").strip()
+    if not raw:
+        return None
+    allowed = set()
+    for m in raw.split(","):
+        m = m.strip()
+        if not m:
+            continue
+        allowed.add(m[7:] if m.startswith("models/") else m)
+    return allowed or None
 
 
 def _parse_system(system_instruction) -> str | None:
@@ -86,6 +102,13 @@ async def list_models():
             description="Fast model for quick responses",
         ),
     ]
+    # MODEL_WHITELIST 过滤（为空则放行全部）；按裸模型名匹配 name 去掉 `models/` 前缀
+    allowed = _whitelist_set()
+    if allowed is not None:
+        models = [
+            m for m in models
+            if (m.name[7:] if m.name.startswith("models/") else m.name) in allowed
+        ]
     return JSONResponse(content=GeminiModelList(models=models).model_dump())
 
 
@@ -226,15 +249,22 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
             try:
                 async for evt in gemini_client.generate_stream(prompt, model, "", attachments):
                     if evt.get("type") == "delta":
+                        # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                         delta = evt.get("text", "")
-                        if evt.get("_replace"):
-                            response_text = delta
-                        else:
-                            response_text += delta
+                        response_text += delta
                         if delta:
                             yield _chunk(delta)
                     elif evt.get("type") == "final":
-                        response_text = evt.get("text", response_text)
+                        # final.text 是过滤完占位串的完整文本，可能比已流出的 response_text
+                        # 多出（流式时被 hold 住的尾部）。补发缺失尾部，保证拿到完整内容。
+                        final_text = evt.get("text", response_text)
+                        if final_text.startswith(response_text) and len(final_text) > len(response_text):
+                            tail = final_text[len(response_text):]
+                            response_text = final_text
+                            if tail:
+                                yield _chunk(tail)
+                        else:
+                            response_text = final_text
             except Exception as e:
                 # generate_stream 在 HTTP>=400 时抛 HTTPStatusError（非 RuntimeError/ValueError 子类），
                 # 故这里捕获 Exception，与 openai/claude 真流式路径一致，避免击穿生成器
@@ -243,6 +273,9 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
 
         completion_tokens = estimate_tokens(response_text)
 
+        # Google 原生 wire format 用 camelCase（finishReason/usageMetadata...），
+        # 与非流式 generateContent 端点一致；snake_case 会被官方 SDK 静默忽略，
+        # 导致流式端丢失 finishReason 和用量统计。
         final_chunk = {
             "candidates": [
                 {
@@ -250,14 +283,14 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
                         "parts": [{"text": ""}],
                         "role": "model",
                     },
-                    "finish_reason": "STOP",
+                    "finishReason": "STOP",
                     "index": 0,
                 }
             ],
-            "usage_metadata": {
-                "prompt_token_count": prompt_tokens,
-                "candidates_token_count": completion_tokens,
-                "total_token_count": prompt_tokens + completion_tokens,
+            "usageMetadata": {
+                "promptTokenCount": prompt_tokens,
+                "candidatesTokenCount": completion_tokens,
+                "totalTokenCount": prompt_tokens + completion_tokens,
             },
         }
         yield json.dumps(final_chunk) + "\n"

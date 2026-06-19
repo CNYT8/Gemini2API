@@ -38,6 +38,15 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
+      # Bake the api/ hot-update assets (QR config + images) into the published
+      # image so it is self-contained: `.dockerignore` excludes `api` by default
+      # (it is a runtime bind-mount target), which would make the Dockerfile's
+      # `COPY api/ ./api/` fail and leave /app/api missing -> StaticFiles startup
+      # crash on any `docker run` without the bind mount. Un-exclude it here only
+      # for the build context; `data` and secrets stay ignored.
+      - name: Include api/ assets in build context
+        run: sed -i '/^api$/d' .dockerignore
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:

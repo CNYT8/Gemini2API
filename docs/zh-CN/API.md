@@ -879,6 +879,18 @@ curl -X PATCH http://localhost:5918/admin/api-keys/key-1/status \
   -d '{"status": "active"}'
 ```
 
+### PATCH /admin/api-keys/{id}/label
+
+修改 Key 标签。
+
+**请求**：
+```bash
+curl -X PATCH http://localhost:5918/admin/api-keys/key-1/label \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
+  -d '{"label": "我的 OpenAI Key"}'
+```
+
 ### POST /admin/api-keys/import
 
 批量导入 API Key。
@@ -918,6 +930,22 @@ curl -X POST http://localhost:5918/admin/api-keys/batch-delete \
   -d '{"ids": ["key-1", "key-2"]}'
 ```
 
+### POST /admin/api-keys/models
+
+探测某 Provider / base_url 下可用的模型列表（用于添加 Key 时填充模型下拉）。
+
+**请求**：
+```bash
+curl -X POST http://localhost:5918/admin/api-keys/models \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-你的API密钥" \
+  -d '{
+    "provider": "openai",
+    "api_key": "sk-xxx",
+    "base_url": "https://api.openai.com/v1"
+  }'
+```
+
 ### GET /admin/verify
 
 验证 API Key 有效性（登录用）。
@@ -934,6 +962,36 @@ curl http://localhost:5918/admin/verify \
   "valid": true,
   "message": "API Key is valid"
 }
+```
+
+### POST /admin/restart
+
+重启服务（面板右上角一键重启，重启后自动轮询恢复）。
+
+**请求**：
+```bash
+curl -X POST http://localhost:5918/admin/restart \
+  -H "Authorization: Bearer sk-你的API密钥"
+```
+
+### GET /admin/check-update
+
+检查是否有新版本。
+
+**请求**：
+```bash
+curl http://localhost:5918/admin/check-update \
+  -H "Authorization: Bearer sk-你的API密钥"
+```
+
+### POST /admin/update
+
+触发更新到最新版本。
+
+**请求**：
+```bash
+curl -X POST http://localhost:5918/admin/update \
+  -H "Authorization: Bearer sk-你的API密钥"
 ```
 
 ### GET /admin/logs

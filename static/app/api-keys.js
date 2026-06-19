@@ -1,6 +1,12 @@
 import { apiCall } from './auth.js';
-import { showToast } from './utils.js';
+import { showToast, escapeHtml } from './utils.js';
 import { t } from './i18n.js';
+
+// 双引号属性上下文专用转义：escapeHtml(textContent 实现) 不转义 ASCII 双引号，
+// 直接拼入 value="..." 仍可被 `"` 逸出注入事件属性，故对属性值额外转义双引号。
+function escapeAttr(str) {
+    return escapeHtml(String(str ?? '')).replace(/"/g, '&quot;');
+}
 
 let keysData = [];
 let catalogData = {};
@@ -100,15 +106,19 @@ function renderModelCheckboxes(models) {
         container.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem">暂无可用模型</span>';
         return;
     }
+    // 安全：模型 id 可能来自攻击者可控的自定义 provider /models 接口，转义后再拼入
+    // value 属性（escapeAttr 含双引号）与文本内容（escapeHtml），防止存储型 XSS。
     container.innerHTML = models.map(m =>
         '<label style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.5rem;cursor:pointer;font-size:0.85rem">' +
-        '<input type="checkbox" value="' + m + '"> ' + m + '</label>'
+        '<input type="checkbox" value="' + escapeAttr(m) + '"> ' + escapeHtml(String(m ?? '')) + '</label>'
     ).join('');
 }
 
 function addModelChip(model) {
     const container = document.getElementById('ak-models-list');
-    const existing = container.querySelector('[data-model="' + model + '"]');
+    // 通过遍历比对 dataset 而非把 model 拼进 CSS 选择器，避免选择器注入/语法错误
+    const existing = Array.from(container.querySelectorAll('.ak-model-chip'))
+        .some(el => el.dataset.model === model);
     if (existing) return;
 
     const placeholder = container.querySelector('span');
@@ -117,8 +127,15 @@ function addModelChip(model) {
     const chip = document.createElement('span');
     chip.className = 'ak-model-chip';
     chip.dataset.model = model;
-    chip.innerHTML = model + ' <i class="fas fa-times" style="cursor:pointer;font-size:0.7rem"></i>';
-    chip.querySelector('i').addEventListener('click', () => chip.remove());
+    // 安全：model 可能来自攻击者可控字符串，模型名作为文本节点写入（textContent），
+    // 删除图标单独 append，避免把未转义的 model 拼进 innerHTML 触发 XSS。
+    chip.textContent = model + ' ';
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-times';
+    icon.style.cursor = 'pointer';
+    icon.style.fontSize = '0.7rem';
+    icon.addEventListener('click', () => chip.remove());
+    chip.appendChild(icon);
     container.appendChild(chip);
 }
 
@@ -206,16 +223,20 @@ function renderKeysList() {
         const statusText = key.status === 'active' ? '启用' : '禁用';
         const toggleText = key.status === 'active' ? '禁用' : '启用';
 
+        // 安全：provider/model/api_key/label 均为用户可控且持久化（label 来自添加表单，
+        // model 可能来自攻击者可控的 provider /models / 导入文件），渲染前一律转义；
+        // id/status 进入 data-* 属性也用 escapeAttr 转义，防止属性逸出。
+        const idEsc = escapeAttr(key.id);
         html += '<tr>';
-        html += '<td><input type="checkbox" class="ak-cb" data-id="' + key.id + '"></td>';
-        html += '<td><span class="ak-provider-badge" style="background:' + color + '20;color:' + color + '">' + key.provider + '</span></td>';
-        html += '<td>' + (key.model || '-') + '</td>';
-        html += '<td><span class="ak-key-masked">' + (key.api_key || '-') + '</span></td>';
-        html += '<td>' + (key.label || '-') + '</td>';
-        html += '<td><span class="' + statusClass + '">' + statusText + '</span></td>';
+        html += '<td><input type="checkbox" class="ak-cb" data-id="' + idEsc + '"></td>';
+        html += '<td><span class="ak-provider-badge" style="background:' + color + '20;color:' + color + '">' + escapeHtml(String(key.provider ?? '')) + '</span></td>';
+        html += '<td>' + escapeHtml(String(key.model ?? '-')) + '</td>';
+        html += '<td><span class="ak-key-masked">' + escapeHtml(String(key.api_key ?? '-')) + '</span></td>';
+        html += '<td>' + escapeHtml(String(key.label ?? '-')) + '</td>';
+        html += '<td><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span></td>';
         html += '<td class="ak-actions">';
-        html += '<button class="btn btn-xs btn-outline ak-toggle-btn" data-id="' + key.id + '" data-status="' + key.status + '">' + toggleText + '</button>';
-        html += '<button class="btn btn-xs btn-danger ak-del-btn" data-id="' + key.id + '"><i class="fas fa-trash"></i></button>';
+        html += '<button class="btn btn-xs btn-outline ak-toggle-btn" data-id="' + idEsc + '" data-status="' + escapeAttr(key.status) + '">' + escapeHtml(toggleText) + '</button>';
+        html += '<button class="btn btn-xs btn-danger ak-del-btn" data-id="' + idEsc + '"><i class="fas fa-trash"></i></button>';
         html += '</td></tr>';
     });
 

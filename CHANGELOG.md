@@ -6,6 +6,36 @@
 
 ## [Unreleased]
 
+## [1.6.19] - 2026-06-19
+
+### Security
+- 🔒 **管理面板存储/反射型 XSS 全面加固**：日志面板（`r.path`/`model`，中间件在鉴权前记录，未认证即可注入）、账号面板（`account.label` 注入 `onclick` 单引号字符串）、API Key 表、模型映射编辑器、Playground 图片 URL、远程二维码配置——所有动态字段统一 HTML 转义；内联 `onclick` 改 `data-*` + `addEventListener`（单引号无法靠 escapeHtml 兜住），属性值用专门的 `escapeAttr`。
+- 🔒 **SSRF 修复**：远程附件下载改为禁跟随重定向并对每一跳 `Location` 重新校验（堵住经 3xx 跳转到 `169.254.169.254`/内网的绕过），并提前按 Content-Length 限制大小；统一转发引擎对存储的 `base_url` 增加出站 SSRF 校验，报错不再回显内网 IP。
+- 🔒 **设置写坏 `.env` 的永久 DoS**：`POST /admin/settings` 改为先做取值域校验（拒绝非法 `rotation_strategy`、拒绝把 bool 当 int）、再更新内存、最后写盘，失败回滚，杜绝畸形值落盘导致重启崩溃。
+- 🔒 **路径穿越**：客户端可控的 `conversation_id` 作文件名时做安全字符校验/哈希，无法逃逸数据目录读写删。
+- 🔒 CORS 通配 + 凭据时启动告警；限流可选信任代理头取真实客户端 IP（默认行为不变）。
+
+### Fixed
+- 🌊 **真流式生图占位 URL 泄漏 + 不可兑现的 `_replace`**：改为纯追加式（回收不稳定尾段、在 final 事件对账），三家接口一致，纯文本回复字节级零回归。
+- 🌊 OpenAI buffered keepalive 异常穿透生成器（绕过重试/错误映射）、Gemini 流式末帧改 Google camelCase 字段。
+- 🔀 统一转发：OpenAI 流式 SSE 缺空行分隔符、Anthropic→OpenAI 转换缺终止 `data: [DONE]`、`base_url=None` 崩溃 → 干净 400。
+- 📊 `USAGE_STATS_ENABLED=false`（或运行时关）时 usage-stats 端点不再 500；`hours` 非法参数返回 422；legacy 快照共享 dict 引用导致历史损坏、漏算当前未落盘区间已修。
+- 👥 账号池：`accounts.json` 原子写 + 加载坏文件/坏条目容错（不再崩启动）、`add_account` 删除后 ID 冲突、round-robin 公平性。
+- 🍪 Cookie 解析：删除/空值不再覆盖有效鉴权 Cookie，记录并清理 Max-Age/Expires。
+- 🛡 指纹：配置原子写 + 坏文件容错、版本同步会话泄漏修复；`reload-cookies` 空池时返回 503 而非 500；深度研究子问题编号剥离不再误删数字开头正文。
+- 🔑 无 `.env` 文件时自动生成的 API Key 现会落盘，不再每次重启更换。
+- 🧰 `atomic_io` 写后 fsync 父目录提升崩溃持久性。
+
+### Changed
+- ⚙️ 让此前"声明了但未生效"的配置真正生效：`MODEL_WHITELIST`（过滤 /models）、`JITTER_ENABLED`、`VERSION_SYNC_INTERVAL`、`FINGERPRINT_CONFIG_PATH`。
+- 🐳 主镜像与 refresher 镜像改非 root 运行 + 内置 HEALTHCHECK；`docker-publish` 确保 `api/` 热更新资源进镜像；refresher 接入 compose（`--profile refresher`）并修复鉴权（支持 `ADMIN_API_KEY`）/状态回注/间隔单位/空 PSIDTS。
+- 🚦 CI 的 ruff + pytest 改为阻塞式门禁（不再 `continue-on-error`）。
+- 🖼 生图代下载移出事件循环（`asyncio.to_thread`）。
+
+### Docs
+- 📄 README/zh-CN/.env.example 全面与 `app/config.py` 对齐：`MAX_CONCURRENT_PER_ACCOUNT` 3→8、补全约 16 个 env、补 7 个未文档化 `/admin` 端点、修复坏 curl 示例、修复 CHANGELOG `[0.4.0]` 损坏标题与多处 2025→2026 年份、Chrome 131/2h→124/24h 更正。
+- 🧪 新增 `tests/unit/test_env_example_sync.py` 漂移测试，防止配置与 `.env.example` 再次脱节。
+
 ## [1.6.18] - 2026-06-19
 
 ### Fixed
@@ -171,12 +201,12 @@
 - 深色主题取消按钮文字白色（补 `.btn-secondary` 样式）
 - 修复 gemini.py 既有 bug：generate 调用签名、system_instruction 类型、build_tool_prompt 用法、split_into_chunks async
 
-## [1.6.2] - 2025-05-19
+## [1.6.2] - 2026-05-19
 
 ### Added
 - 会话过期机制：页面 5 分钟无操作自动登出，保护面板安全
 
-## [1.6.1] - 2025-05-18
+## [1.6.1] - 2026-05-18
 
 ### Added
 - 新增 failover（故障转移）策略：一个账号持续使用直到失败才自动切换下一个
@@ -225,7 +255,7 @@
 - 方向徽章中文化：ingress → 入站，egress → 出站
 - 修复 CSS 语法错误（white-space、badge text-transform 截断）
 
-## [0.7.0] - 2025-05-16
+## [0.7.0] - 2026-05-16
 
 ### Added
 - 结构化实时日志系统，替代旧的纯文本 SSE 流
@@ -242,7 +272,7 @@
 - 移除旧的 BufferLogHandler 和 `/admin/logs/stream` SSE 端点
 - 移除前端 EventSource 日志流
 
-## [0.6.0] - 2025-05-16
+## [0.6.0] - 2026-05-16
 
 ### Added
 - 用量统计系统，持久化时序快照，重启不丢失历史数据
@@ -259,7 +289,7 @@
 - `gemini_client._rotate_cookies()` 自动记录轮换成功/失败事件
 - 配置新增 `USAGE_STATS_ENABLED`、`USAGE_STATS_INTERVAL`、`USAGE_STATS_RETENTION_DAYS`
 
-## [0.5.2] - 2025-05-16
+## [0.5.2] - 2026-05-16
 
 ### Added
 - batchexecute 心跳 RPC（`otAQ7b`），初始化和每次 auto-refresh 后自动发送，模拟浏览器活跃行为
@@ -270,7 +300,7 @@
 - `update_from_response` 双通道捕获：先从 `response.cookies`，再从 `Set-Cookie` 头补充
 - RotateCookies 现在自动携带完整 Cookie jar（SID/HSID/APISID/SAPISID 等）
 
-## [0.5.1] - 2025-05-16
+## [0.5.1] - 2026-05-16
 
 ### Fixed
 - 修复 curl_cffi AsyncSession 跨域 Cookie 累积导致 "Multiple cookies exist" 错误
@@ -287,22 +317,24 @@
 - `copyToClipboard` 增加 `document.execCommand` 降级方案，兼容非 HTTPS 环境
 - Playground 模型列表改为从 API 动态加载
 
-## [0.5.0] - 2025-05-15
+## [0.5.0] - 2026-05-15
 
 ### Added
 - 反检测与协议伪装系统，大幅延长 session 存活时间
 - 指纹配置管理（`data/fingerprint.json`），Chrome 版本/UA/TLS 指纹三者自动保持一致
 - 动态请求头构建器，按 Chrome 真实顺序排列，根据请求类型（GET/POST）动态调整 Sec-Fetch-* 值
 - 完整 Cookie 持久化（`data/cookies/`），自动捕获所有响应 Cookie 并持久化到磁盘
-- Chrome 版本自动同步，每 2小时轮询 Google 版本 API，检测到新版本自动更新指纹
+- Chrome 版本自动同步，每 24 小时轮询 Google 版本 API，检测到新版本自动更新指纹
 - 请求时间抖动，模拟人类操作间隔（导航 200-800ms / API 50-300ms / Cookie 轮换 1-3s）
 - 版本降级策略：当 curl_cffi 不支持最新 Chrome 版本时，自动使用最近的可用版本
 
 ### Changed
 - GeminiWebClient 全面集成指纹系统，替换硬编码请求头和手动 Cookie 管理
-- TLS 指纹从固定 Chrome 120 升级为动态版本（当前 Chrome 131），支持自动跟进
+- TLS 指纹从固定 Chrome 120 升级为动态版本（当前 Chrome 124，curl_cffi 0.7.4 最高可用），支持自动跟进
 - 健康检查和 Cookie 刷新间隔加入随机因子（±20%），避免固定周期特征
-- Docker 新增 `data` 卷挂载，指纹配置和 Cookie 跨容器重建持久4.0] - 2025-05-15
+- Docker 新增 `data` 卷挂载，指纹配置和 Cookie 跨容器重建持久化。
+
+## [0.4.0] - 2026-05-15
 
 ### Changed
 - 替换 httpx 为 curl_cffi，使用 Chrome TLS 指纹伪装，降低被 Google 识别为脚本流量的风险
@@ -311,7 +343,7 @@
 ### Removed
 - 移除 httpx 依赖
 
-## [0.3.0] - 2025-05-15
+## [0.3.0] - 2026-05-15
 
 ### Added
 - 多账号轮询（负载均衡）功能，支持 round-robin 和 least-used 两种策略
@@ -326,7 +358,7 @@
 - 所有路由通过 AccountPool 分发请求，支持多账号透明切换
 - 向后兼容：无 `accounts.json` 时自动使用环境变量单账号模式
 
-## [0.2.0] - 2025-05-15
+## [0.2.0] - 2026-05-15
 
 ### Added
 - 账号状态定时检测功能，支持自定义检测间隔
@@ -338,7 +370,7 @@
 ### Changed
 - 许可协议变更为 PolyForm Noncommercial 1.0.0
 
-## [0.1.0] - 2025-05-14
+## [0.1.0] - 2026-05-14
 
 ### Added
 - Deep Research 深度研究功能
@@ -350,7 +382,7 @@
 - 速率限制（可选）
 - 完整的管理接口（`/admin`）
 
-## [0.0.1] - 2025-05-13
+## [0.0.1] - 2026-05-13
 
 ### Added
 - 项目初始化

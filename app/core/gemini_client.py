@@ -136,6 +136,47 @@ _IMAGE_GEN_PLACEHOLDER_RE = re.compile(
     r'https?://googleusercontent\.com/(?:image_generation_content|image_retrieval|image_collection)[/\w]*\d*'
 )
 
+# 流式时占位 URL 是逐字符到达的，半截 URL（如 `http://googleusercontent.com/image_gen`、
+# 甚至刚到 `http://googleuser`）既不被上面的完整正则匹配，substring 守卫又为真——
+# 直接 emit 会把半截网址流给客户端。占位 URL 的完整起始模板（host 段固定）：
+_IMAGE_GEN_PLACEHOLDER_PREFIX = "http://googleusercontent.com/"
+_IMAGE_GEN_PLACEHOLDER_PREFIX_S = "https://googleusercontent.com/"
+
+
+def _stable_placeholder_prefix(text: str) -> str:
+    """返回 text 中"可安全 emit 的稳定前缀"（已剥离完整占位 URL，并 hold 住尚未成形的占位 URL 尾部）。
+
+    流式逐字符到达时，占位 URL 可能只到一半（甚至只到协议头）。策略：
+    1. 先把所有【已完整】的占位 URL 用正则剥掉（与非流式 _parse_output 一致）。
+    2. 再扫描剩余文本的尾部：若某个 `http://`/`https://` 起点之后的内容仍是占位 URL 模板
+       `http(s)://googleusercontent.com/...` 的真前缀（即还可能补全成占位串），就把从该起点
+       起的尾部整段 hold 住不 emit；若已和模板分叉（是别的真实 URL），则正常放行。
+       同时处理尾部刚到一半的协议头（如以 `htt`/`http:/` 结尾）。
+    这样既不会泄露半截网址，也不会因为后续帧把占位串删掉而破坏 append-only 前缀关系。
+    """
+    cleaned = _IMAGE_GEN_PLACEHOLDER_RE.sub("", text)
+    cut = len(cleaned)
+    # 1) 扫描所有 `http` 起点：其后内容若仍是占位模板的前缀（或反过来模板是其前缀），
+    #    说明还可能补全成占位 URL，从该起点 hold 住。
+    search_from = 0
+    while True:
+        p = cleaned.find("http", search_from)
+        if p == -1:
+            break
+        tail = cleaned[p:]
+        for tmpl in (_IMAGE_GEN_PLACEHOLDER_PREFIX, _IMAGE_GEN_PLACEHOLDER_PREFIX_S):
+            if tmpl.startswith(tail) or tail.startswith(tmpl):
+                cut = min(cut, p)
+                break
+        search_from = p + 1
+    # 2) 末尾刚到一半的协议头（`h`/`ht`/`htt`，长度 < 4 时上面 find('http') 找不到）：
+    #    若结尾是 `http` 的真前缀，也 hold 住，等下一帧确认是不是占位 URL 起点。
+    for k in (3, 2, 1):
+        if cut == len(cleaned) and cleaned.endswith("http"[:k]):
+            cut = len(cleaned) - k
+            break
+    return cleaned[:cut]
+
 
 def _scan_complete_wrb_frames(buf: str) -> tuple[list, int]:
     """从流式累积 buffer 中切出所有完整的 `["wrb.fr",...]` 顶层元素。
@@ -300,6 +341,9 @@ class GeminiWebClient:
         # 自愈单飞锁（asyncio）：并发命中 "not ready" 时只触发一次 reload_cookies（Issue#1-C）。
         # 注意：上面的 self._lock 是 threading.Lock，不支持 async with，故另设异步锁。
         self._heal_lock = asyncio.Lock()
+        # 指纹换 session 单飞锁：多协程共享一个 client 并发调 _ensure_session_current 时，
+        # 防止指纹轮换瞬间对同一个 _http 双重 close + 互相覆盖新 session 致泄漏（双重检查锁）。
+        self._session_lock = asyncio.Lock()
         self._healthy = False
         self._refresh_task: asyncio.Task | None = None
         self._health_check_task: asyncio.Task | None = None
@@ -366,13 +410,28 @@ class GeminiWebClient:
         return list(self._check_history)
 
     async def _ensure_session_current(self):
-        """检查 impersonate 目标是否需要更新"""
+        """检查 impersonate 目标是否需要更新（指纹轮换时换 session）。
+
+        并发安全：多协程共享一个 client，指纹轮换瞬间可能同时进入。用单飞锁 +
+        双重检查（拿锁后再比一次 target）保证只有一个协程 close+重建，其余协程拿锁后
+        看到 target 已更新直接返回，避免对同一 session 双重 close、新 session 互相覆盖泄漏。
+        """
         target = header_builder.get_impersonate_target()
-        if self._current_target != target:
+        if self._current_target == target:
+            return
+        async with self._session_lock:
+            # 双重检查：可能在等锁期间已被别的协程换好了
+            if self._current_target == target:
+                return
             logger.info(f"TLS 指纹更新: {self._current_target} -> {target}")
-            await self._http.close()
+            old = self._http
             self._http = AsyncSession(impersonate=target, timeout=60)
             self._current_target = target
+            if old is not None:
+                try:
+                    await old.close()
+                except Exception:
+                    pass
 
     def _get_cookies(self) -> dict[str, str]:
         return self._cookie_jar.get_all()
@@ -908,6 +967,9 @@ class GeminiWebClient:
                 await asyncio.sleep(wait)
             except Exception as e:
                 last_err = e
+                # 最后一次尝试失败后不再有重试，跳过退避空耗，立即抛错让上层 failover
+                if attempt >= settings.max_retries - 1:
+                    break
                 wait = 2 ** attempt
                 logger.warning(f"Attempt {attempt+1}: {e}, wait {wait}s")
                 await asyncio.sleep(wait)
@@ -1006,25 +1068,23 @@ class GeminiWebClient:
                                 last_images = imgs
                             if text is None:
                                 continue
-                            # 生图/找图时帧文本会带 googleusercontent 占位 URL，流式增量也要先过滤，
-                            # 否则会流给客户端（这类占位串只在生图/检索时出现，纯文本回复不含，过滤安全）
-                            if "googleusercontent.com/image" in text:
-                                text = _IMAGE_GEN_PLACEHOLDER_RE.sub("", text)
+                            # last_text 始终存原始累积文本，供收尾 _finalize_stream 统一过滤占位串。
                             last_text = text
-                            # 帧是累积式：当前帧文本 = 已发送文本 + 新增尾部。
-                            # 与「已 emit 的文本」(emitted) 比前缀，决定是追加增量还是整段被替换。
-                            if text == emitted:
-                                continue  # 文本没变（如重复帧），不重复发
-                            if len(text) >= len(emitted) and text.startswith(emitted):
-                                delta = text[len(emitted):]
-                                emitted = text
+                            # 计算"可安全 emit 的稳定前缀"：剥掉已完整的占位 URL，并 hold 住任何
+                            # 尚未接收完整的占位 URL 尾部（避免泄露半截 googleusercontent 网址）。
+                            safe = _stable_placeholder_prefix(text)
+                            # 帧是累积式：safe 应是 emitted 的扩展前缀。严格 append-only：
+                            # 只在 safe 以 emitted 为前缀时追加新增尾部；非累积帧（思考/重排
+                            # 导致 safe 不再以 emitted 为前缀，或占位串补全后变短）则 hold 住，
+                            # 不发 _replace（append-only SSE 无法回退），由收尾的 final.text 兜底纠正。
+                            if safe == emitted:
+                                continue  # 没有新的稳定增量
+                            if len(safe) > len(emitted) and safe.startswith(emitted):
+                                delta = safe[len(emitted):]
+                                emitted = safe
                                 if delta:
                                     yield {"type": "delta", "text": delta}
-                            else:
-                                # 极少数：帧文本非纯累积（被替换/重排），整段重置补发
-                                emitted = text
-                                logger.warning("[stream] 非累积帧，整段重置补发（_replace）")
-                                yield {"type": "delta", "text": text, "_replace": True}
+                            # else: 非累积/缩短帧，本帧不 emit，等后续帧或 final 收尾
                 finally:
                     # 无论正常结束/4xx/超时，都尝试更新 PSIDTS（流式下 resp 头部 cookie 可读），
                     # 避免流式错误路径漏掉 Cookie 轮换（与非流式 _send_request 行为对齐）

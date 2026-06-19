@@ -62,7 +62,9 @@ async def lifespan(app: FastAPI):
         from app.core import image_store
         while True:
             try:
-                image_store.cleanup_old()
+                # cleanup_old 是同步的 listdir/getmtime/remove 全目录扫描，直接调用会阻塞
+                # 事件循环、卡住所有并发请求。改为 to_thread 在线程池里跑（修复 #24）。
+                await asyncio.to_thread(image_store.cleanup_old)
             except Exception as e:
                 logger.warning(f"[image_store] 清理异常: {e}")
             await asyncio.sleep(6 * 3600)  # 每 6 小时清一次过期生成图片
@@ -99,10 +101,13 @@ async def lifespan(app: FastAPI):
         version_task = asyncio.create_task(version_sync_loop())
         logger.info("Chrome version sync task started")
 
+    # 用量统计 store 始终实例化（即使 usage_stats_enabled=False 或运行时再开启），
+    # 这样 /admin/usage-stats/* 端点恒有可读对象，不会因 app.state 缺失而 500（修复 #30/#14）。
+    # 仅快照后台循环受开关控制：关闭时不落新快照，端点返回已加载/空数据。
+    store = UsageStatsStore(retention_days=settings.usage_stats_retention_days)
+    app.state.usage_stats_store = store
     snapshot_task = None
     if settings.usage_stats_enabled:
-        store = UsageStatsStore(retention_days=settings.usage_stats_retention_days)
-        app.state.usage_stats_store = store
         snapshot_task = asyncio.create_task(
             snapshot_loop(store, account_pool, interval=settings.usage_stats_interval)
         )
@@ -158,6 +163,12 @@ _cors_origins = (
     if settings.cors_allow_origins.strip() == "*"
     else [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 )
+# 不改变默认行为（保持零回归），但通配来源 + 允许凭据是不安全组合，启动时提醒运维收紧（#32）。
+if _cors_origins == ["*"] and settings.cors_allow_credentials:
+    logger.warning(
+        "CORS: cors_allow_origins='*' 同时 cors_allow_credentials=True 不安全；"
+        "建议设置 CORS_ALLOW_ORIGINS 白名单或 CORS_ALLOW_CREDENTIALS=false 收紧。"
+    )
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -202,6 +213,23 @@ async def log_capture_middleware(request: Request, call_next):
     if any(path.startswith(p) for p in SKIP_LOG_PREFIXES):
         return await call_next(request)
 
+    is_api = path.startswith(("/openai/", "/claude/", "/gemini/", "/v1/", "/v1beta/"))
+
+    # 提前读取 JSON 请求体并缓存，让下方日志可记录 model/stream（修复 #34）。
+    # 此前 _body_cache 从未被赋值，model/stream 恒为 None，日志缺失关键字段。
+    # Starlette 的 Request.body() 会把结果缓存进 request._body，下游 Pydantic 解析
+    # 复用同一份字节，不会二次读取已耗尽的流，因此对正常请求零影响。
+    # 仅对会话类 API 的 JSON POST 这么做，避免对上传/流式/GET 增加开销。
+    if (
+        is_api
+        and request.method == "POST"
+        and request.headers.get("content-type", "").startswith("application/json")
+    ):
+        try:
+            request.state._body_cache = await request.body()
+        except Exception:
+            pass
+
     import time
     start = time.perf_counter()
     response = await call_next(request)
@@ -210,7 +238,6 @@ async def log_capture_middleware(request: Request, call_next):
     method = request.method
     status = response.status_code
 
-    is_api = path.startswith(("/openai/", "/claude/", "/gemini/", "/v1/", "/v1beta/"))
     if not is_api and not path.startswith("/admin/"):
         return response
 
@@ -222,8 +249,9 @@ async def log_capture_middleware(request: Request, call_next):
         import json
         try:
             body = json.loads(request.state._body_cache)
-            model = body.get("model")
-            stream = body.get("stream")
+            if isinstance(body, dict):
+                model = body.get("model")
+                stream = body.get("stream")
         except Exception:
             pass
 

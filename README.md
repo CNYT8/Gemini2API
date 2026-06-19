@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Docker-20.10+-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/Chrome%20%7C%20Edge-Latest-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Browser">
   <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/version-v1.6.18-success?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-v1.6.19-success?style=flat-square" alt="Version">
 </p>
 
 <p>
@@ -59,6 +59,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-06-19 22:00:00 | v1.6.19 - 🔒 安全与质量强化批次：修复 6 处管理面板 XSS、2 处 SSRF（附件重定向绕过/转发 base_url 未校验）、设置写坏 .env 的永久 DoS、conversation_id 路径穿越；🔧 流式生图占位 URL 泄漏/转发 SSE 缺分隔符与 [DONE]、usage-stats 关闭时 500、accounts.json 原子写、账号 ID 冲突等多项；⚙️ 让 MODEL_WHITELIST/JITTER_ENABLED/VERSION_SYNC_INTERVAL 等配置真正生效；📄 文档/配置全面对齐 + 新增漂移测试；🐳 镜像非 root + CI 门禁可失败。全程零回归（63 测试 + ruff + 对抗复核通过）|
 | 2026-06-19 14:15:00 | v1.6.18 - 🔧 修复 gemini-pro 生图 network error：生图意图 Google POST 超时 60s→180s（pro 常 >60s）；SSE keepalive 10s + 切片阶段 ping + 生图结果 delay=0。零回归（62 测试通过）|
 | 2026-06-19 13:30:00 | v1.6.17 - 🔧 修复 playground 生图 network error：SSE 首帧 + 15s 心跳保活，解决 buffered 生图零字节导致 Cloudflare/nginx 超时；图片下载默认 =s2048/25s 超时/=s512 降级/失败占位。🎨 Playground 生图等待态 UX + 5 语 i18n 友好错误提示。零回归（52 测试通过）|
 | 2026-06-19 03:01:44 | v1.6.16 - 🔧 稳定性与安全强化：修复深度研究接口必崩、第三方流式转发失效、账号槽位泄漏死锁、多账号模型解析串扰、间歇 "Client not ready"、限流配置未生效；🔒 安全加固：管理权限分离（可选 `ADMIN_API_KEY`）、API Key 日志脱敏、双 SSRF 防护、密钥导出/PSID 脱敏、凭据文件原子写、CORS 可配、恒定时间比较；🧪 新增自动化测试 + CI 门禁、面板无障碍/多语言增强。全程零回归（58 测试通过）|
@@ -74,15 +75,15 @@
 | 2026-05-31 23:41:15 | v1.6.6 - 🖼️ 生成图片本地托管：对话接口的生图结果改为返回可访问的本地 URL（/images/{id}），让 CLI/agent 客户端也能正常渲染显示（base64 在这类客户端无法显示）；图片定期自动清理 |
 | 2026-05-31 22:36:53 | v1.6.5 - 🎨 AI 生成图片：新增 OpenAI 兼容 `/v1/images/generations` 接口（返回 b64_json）；三家对话接口检测到生成图片自动嵌入回复（markdown / image block / inlineData） |
 | 2026-05-31 17:00:00 | v1.6.4 - 三家接口暴露标准裸路径（`/v1/chat/completions`、`/v1/messages`、`/v1beta/...`），主流 SDK 开箱即用；修复部署机制（compose 由 build 改 image，`docker compose pull` 真正生效） |
-| 2025-05-31 14:10:00 | v1.6.3 - 图片/文件上传支持（OpenAI/Claude/Gemini 多模态）；模型改用网页版真实数据 + 对外固定稳定名（gemini-pro/flash/flash-thinking）；重启不再丢 Cookie |
-| 2025-05-19 20:00:00 | v1.6.2 - 会话5分钟无操作自动过期登出 |
-| 2025-05-17 23:20:00 | 模型列表统一为用户友好名称，新增思考模式（gemini-2.5-flash-thinking）和 Pro 模式，Playground 对话上下文修复 |
-| 2025-05-17 22:30:00 | 容器时区修正为 Asia/Shanghai，日志显示北京时间 |
-| 2025-05-17 17:00:00 | 模型选择修复（通过 x-goog-ext header 真正切换模型），支持 gemini-3 全系列 + 旧版别名兼容 |
-| 2025-05-17 15:30:00 | 对话上下文持久化（混合模式）：Gemini 原生 conversation_id 多轮续接 + 本地备份 + 自动 fallback |
-| 2025-05-17 09:00:00 | 新增多语言切换（简体中文/繁體中文/English/日本語/한국어），确认弹窗美化为自定义 Modal |
-| 2025-05-17 08:30:00 | 多语言覆盖全部页面（仪表盘/账号/日志/测试/统计/API/设置），修复 MutationObserver 无限循环 |
-| 2025-05-16 19:00:00 | 新增服务重启按钮（右上角控制栏），支持一键重启服务 |
+| 2026-05-31 14:10:00 | v1.6.3 - 图片/文件上传支持（OpenAI/Claude/Gemini 多模态）；模型改用网页版真实数据 + 对外固定稳定名（gemini-pro/flash/flash-thinking）；重启不再丢 Cookie |
+| 2026-05-19 20:00:00 | v1.6.2 - 会话5分钟无操作自动过期登出 |
+| 2026-05-17 23:20:00 | 模型列表统一为用户友好名称，新增思考模式（gemini-2.5-flash-thinking）和 Pro 模式，Playground 对话上下文修复 |
+| 2026-05-17 22:30:00 | 容器时区修正为 Asia/Shanghai，日志显示北京时间 |
+| 2026-05-17 17:00:00 | 模型选择修复（通过 x-goog-ext header 真正切换模型），支持 gemini-3 全系列 + 旧版别名兼容 |
+| 2026-05-17 15:30:00 | 对话上下文持久化（混合模式）：Gemini 原生 conversation_id 多轮续接 + 本地备份 + 自动 fallback |
+| 2026-05-17 09:00:00 | 新增多语言切换（简体中文/繁體中文/English/日本語/한국어），确认弹窗美化为自定义 Modal |
+| 2026-05-17 08:30:00 | 多语言覆盖全部页面（仪表盘/账号/日志/测试/统计/API/设置），修复 MutationObserver 无限循环 |
+| 2026-05-16 19:00:00 | 新增服务重启按钮（右上角控制栏），支持一键重启服务 |
 
 ---
 
@@ -518,10 +519,15 @@ curl -X POST http://localhost:5918/v1/images/generations \
 | POST | `/api-keys` | 添加 API Key |
 | DELETE | `/api-keys/{id}` | 删除 API Key |
 | PATCH | `/api-keys/{id}/status` | 切换 Key 状态（启用/禁用） |
+| PATCH | `/api-keys/{id}/label` | 修改 Key 标签 |
 | POST | `/api-keys/import` | 批量导入 Key |
-| GET | `/api-keys/export` | 导出所有 Key（完整密钥） |
+| GET | `/api-keys/export` | 导出所有 Key（默认脱敏，`?reveal=true` 取明文） |
 | POST | `/api-keys/batch-delete` | 批量删除 |
+| POST | `/api-keys/models` | 探测某 Provider/base_url 下可用模型列表 |
 | GET | `/verify` | 验证 API Key 有效性（登录用） |
+| POST | `/restart` | 重启服务（面板右上角一键重启） |
+| GET | `/check-update` | 检查是否有新版本 |
+| POST | `/update` | 触发更新到最新版本 |
 | GET | `/logs` | 结构化日志分页查询（支持 direction/search/limit/offset） |
 | GET | `/logs/state` | 日志记录状态（enabled/paused） |
 | POST | `/logs/state` | 更新日志记录状态 |
@@ -530,6 +536,8 @@ curl -X POST http://localhost:5918/v1/images/generations \
 | GET | `/model-mapping` | 获取所有模型映射 |
 | POST | `/model-mapping` | 添加/更新模型映射 |
 | DELETE | `/model-mapping/{alias}` | 删除模型映射 |
+| GET | `/web-chats` | 列出账号在 Gemini 网页端堆积的会话（只读） |
+| POST | `/cleanup-web-chats` | 手动触发清理超期网页会话（后台异步执行） |
 
 ### 系统
 
@@ -553,7 +561,8 @@ curl -X POST http://localhost:5918/admin/accounts \
   -d '{"psid":"g.a000新的值","psidts":"sidts-新的值","label":"我的第二个账号"}'
 
 # 移除账号
-curl -X DELETE http://localhost:5918/admin/accounts/account-1 \"Authorization: Bearer sk-你的API密钥"
+curl -X DELETE http://localhost:5918/admin/accounts/account-1 \
+  -H "Authorization: Bearer sk-你的API密钥"
 
 # 检测单个账号状态
 curl http://localhost:5918/admin/accounts/account-0/check \
@@ -590,7 +599,10 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
 | `ACCOUNTS_FILE` | ❌ | `accounts.json` | 多账号配置文件路径（不存在则使用环境变量单账号模式） |
 | `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `failover`（故障转移） |
-| `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每账号最大并发请求数 |
+| `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `8` | 每账号最大并发请求数 |
+| `ACQUIRE_TIMEOUT` | ❌ | `60.0` | 并发满载时排队等待可用槽位的上限（秒），等不到才报错 |
+| `SAME_ACCOUNT_5XX_RETRIES` | ❌ | `1` | 遇 5xx 时同账号快速重试次数（不长退避），仍失败则 failover 换号 |
+| `FAILOVER_COOLDOWN` | ❌ | `30.0` | 被 5xx 限流的账号进入冷却的时长（秒），期间不优先选 |
 | `FINGERPRINT_CONFIG_PATH` | ❌ | `data/fingerprint.json` | 指纹配置文件路径 |
 | `VERSION_SYNC_ENABLED` | ❌ | `true` | 启用 Chrome 版本自动同步 |
 | `VERSION_SYNC_INTERVAL` | ❌ | `24` | 版本同步间隔（小时） |
@@ -598,7 +610,16 @@ curl -X POST http://localhost:5918/admin/reload-cookies \
 | `USAGE_STATS_ENABLED` | ❌ | `true` | 启用用量统计（时序快照 + 持久化） |
 | `USAGE_STATS_INTERVAL` | ❌ | `300` | 快照采集间隔（秒） |
 | `USAGE_STATS_RETENTION_DAYS` | ❌ | `30` | 历史数据保留天数 |
-| `MODEL_WHITELIST` | ❌ | — | 模型白名单（逗号分隔，为空则不过滤） |
+| `MODEL_WHITELIST` | ❌ | — | 模型白名单（逗号分隔，为空则不过滤；非空时过滤各 `/models` 列表） |
+| `CHAT_CLEANUP_ENABLED` | ❌ | `true` | 启用 Gemini 网页端会话自动清理 |
+| `CHAT_CLEANUP_KEEP_HOURS` | ❌ | `24.0` | 网页会话保留时长（小时），超过则清理 |
+| `CHAT_CLEANUP_INTERVAL_HOURS` | ❌ | `6.0` | 自动清理任务运行间隔（小时） |
+| `CHAT_CLEANUP_SKIP_PINNED` | ❌ | `true` | 清理时跳过置顶会话 |
+| `ADMIN_API_KEY` | ❌ | — | 管理面板/`/admin` 独立鉴权 key（留空则回退用 `API_KEY`） |
+| `CORS_ALLOW_ORIGINS` | ❌ | `*` | CORS 允许来源（逗号分隔，`*` 表示全部） |
+| `CORS_ALLOW_CREDENTIALS` | ❌ | `true` | CORS 是否允许携带凭据 |
+| `IMAGE_DOWNLOAD_SIZE_SUFFIX` | ❌ | `=s2048` | 生图代下载尺寸后缀（`=s0` 为全分辨率原图） |
+| `IMAGE_DOWNLOAD_TIMEOUT` | ❌ | `25.0` | 单次图片下载 HTTP 超时（秒） |
 
 ---
 

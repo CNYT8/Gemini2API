@@ -187,11 +187,14 @@ async function loadQrCards() {
         const resp = await fetch(`${QR_REMOTE_BASE}/qr-config.json`);
         if (!resp.ok) return;
         const config = await resp.json();
+        // 安全：qr-config.json 来自第三方 GitHub 源（可被篡改/MITM），title/description/image
+        // 一律转义后再拼入 innerHTML；image 仅取相对路径片段并 encodeURIComponent，
+        // 同时对属性值用 escapeAttr 防止双引号逸出注入事件属性。
         container.innerHTML = (config.cards || []).map(card => `
             <div class="qr-card">
-                <p class="qr-title">${card.title}</p>
-                <img src="${QR_REMOTE_BASE}/${card.image}" alt="${card.title}" class="qr-img" onclick="window.app.openLightbox(this.src)">
-                <p class="qr-desc">${card.description}</p>
+                <p class="qr-title">${escapeHtml(card.title)}</p>
+                <img src="${QR_REMOTE_BASE}/${encodeURIComponent(String(card.image ?? ''))}" alt="${escapeAttr(card.title)}" class="qr-img" onclick="window.app.openLightbox(this.src)">
+                <p class="qr-desc">${escapeHtml(card.description)}</p>
             </div>
         `).join('');
     } catch (e) {
@@ -229,10 +232,11 @@ function renderAccountStatusGrid(accounts) {
         return;
     }
 
+    // 安全：account.label 来自添加账号表单（后端逐字存储，无过滤），作为文本内容渲染前转义，防止存储型 XSS
     container.innerHTML = accounts.map(account => `
         <div class="provider-card">
             <div class="provider-card-header">
-                <h4>${account.label || account.id}</h4>
+                <h4>${escapeHtml(account.label || account.id)}</h4>
                 ${getStatusBadge(account.status)}
             </div>
             <div class="account-detail">
@@ -265,11 +269,16 @@ function renderModelsList(modelsSet) {
         return;
     }
 
+    // 安全：不再把 model 拼进 onclick 单引号 JS 字符串（escapeHtml 不转义单引号，无法防逸出），
+    // 改用 data-model 属性 + addEventListener，model 经 escapeAttr/escapeHtml 转义后写入
     container.innerHTML = models.map(model => `
-        <span class="model-tag" onclick="window.app.copyModel('${model}')">
-            <i class="fas fa-cube"></i> ${model}
+        <span class="model-tag" data-model="${escapeAttr(model)}">
+            <i class="fas fa-cube"></i> ${escapeHtml(model)}
         </span>
     `).join('');
+    container.querySelectorAll('.model-tag').forEach(tag => {
+        tag.addEventListener('click', () => copyModel(tag.dataset.model));
+    });
 }
 
 function updatePlaygroundModels(modelsSet) {
@@ -282,8 +291,9 @@ function updatePlaygroundModels(modelsSet) {
         return;
     }
 
+    // 安全：model 转义后再拼入 option 的 value 属性与文本内容，防止属性逸出/标签注入
     select.innerHTML = models.map(model =>
-        `<option value="${model}">${model}</option>`
+        `<option value="${escapeAttr(model)}">${escapeHtml(model)}</option>`
     ).join('');
 }
 
@@ -311,18 +321,25 @@ async function loadAccounts() {
             return;
         }
 
-        container.innerHTML = accounts.map(account => `
+        // 安全：account.label 用户可控且持久化；id/label 既作为文本（escapeHtml）也进入按钮的
+        // data-* 属性（escapeAttr）。关键修复：原 onclick 把 label 拼进单引号 JS 字符串，
+        // escapeHtml 不转义单引号无法防逸出，故改为 data-account-id/data-account-label +
+        // addEventListener，使用户数据不再出现在属性内的 JS 字符串字面量里。
+        container.innerHTML = accounts.map(account => {
+            const idEsc = escapeAttr(account.id);
+            const labelEsc = escapeAttr(account.label || '');
+            return `
             <div class="account-card">
                 <div class="account-card-header">
                     <div>
-                        <h4>${account.label || t('accounts.unnamed')}</h4>
-                        <span class="text-muted">ID: ${account.id}</span>
+                        <h4>${escapeHtml(account.label || t('accounts.unnamed'))}</h4>
+                        <span class="text-muted">ID: ${escapeHtml(String(account.id ?? ''))}</span>
                     </div>
                     ${getStatusBadge(account.status)}
                 </div>
                 <div class="account-detail">
                     <span class="label">PSID</span>
-                    <span class="value">${maskString(account.psid || '', 12)}</span>
+                    <span class="value">${escapeHtml(maskString(account.psid || '', 12))}</span>
                 </div>
                 <div class="account-detail">
                     <span class="label">${t('accounts.requests')}</span>
@@ -337,18 +354,30 @@ async function loadAccounts() {
                     <span class="value">${(account.models || []).length || account.models_count || 0}</span>
                 </div>
                 <div class="account-actions">
-                    <button class="btn btn-sm btn-outline" onclick="window.app.checkAccount('${account.id}')">
+                    <button class="btn btn-sm btn-outline acc-check-btn" data-account-id="${idEsc}">
                         <i class="fas fa-heartbeat"></i> ${t('accounts.check')}
                     </button>
-                    <button class="btn btn-sm btn-outline" onclick="window.app.openUpdateCookieModal('${account.id}', '${account.label || ''}')">
+                    <button class="btn btn-sm btn-outline acc-cookie-btn" data-account-id="${idEsc}" data-account-label="${labelEsc}">
                         <i class="fas fa-cookie-bite"></i> ${t('accounts.updateCookie')}
                     </button>
-                    <button class="btn btn-sm btn-danger" onclick="window.app.removeAccount('${account.id}')">
+                    <button class="btn btn-sm btn-danger acc-remove-btn" data-account-id="${idEsc}">
                         <i class="fas fa-trash"></i> ${t('accounts.delete')}
                     </button>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
+
+        // 通过 dataset 取回原始（已解码）值绑定事件，避免用户数据出现在 inline JS 字符串里
+        container.querySelectorAll('.acc-check-btn').forEach(btn => {
+            btn.addEventListener('click', () => checkAccount(btn.dataset.accountId));
+        });
+        container.querySelectorAll('.acc-cookie-btn').forEach(btn => {
+            btn.addEventListener('click', () => openUpdateCookieModal(btn.dataset.accountId, btn.dataset.accountLabel || ''));
+        });
+        container.querySelectorAll('.acc-remove-btn').forEach(btn => {
+            btn.addEventListener('click', () => removeAccount(btn.dataset.accountId));
+        });
     } catch (error) {
         console.error('加载账号列表失败:', error);
     }
@@ -715,8 +744,14 @@ async function sendPlaygroundRequest() {
 
 function escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = text == null ? '' : text;
     return div.innerHTML;
+}
+
+// 双引号属性上下文专用转义：escapeHtml(textContent 实现) 不转义 ASCII 双引号，
+// 直接拼入 src="..."/alt="..." 仍可被 `"` 逸出注入事件属性，故额外转义双引号。
+function escapeAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;');
 }
 
 // 把 AI 回复渲染成 HTML：markdown 图片 ![](url)、裸图片 URL/data URI → <img>，其余文本转义
@@ -741,8 +776,12 @@ function _pgRenderContent(text) {
     // 转义剩余文本，再把占位符还原成 <img>
     let html = escapeHtml(s);
     imgs.forEach((url, i) => {
+        // 安全：url 来自模型输出（不可信），且捕获正则允许出现双引号，直接拼进 src="..."
+        // 会被 `"` 逸出注入 onerror 等事件属性。仅允许 http(s)/data:image 协议，
+        // 并用 escapeAttr 转义属性值，杜绝属性逸出型 XSS。
+        const safeUrl = /^(https?:|data:image\/)/i.test(url) ? escapeAttr(url) : '';
         html = html.replace(` IMG${i} `,
-            `<img src="${url}" class="chat-img" alt="generated image">`);
+            `<img src="${safeUrl}" class="chat-img" alt="generated image">`);
     });
     return html;
 }
@@ -868,7 +907,7 @@ async function handleCheckUpdate() {
                         <i class="fas fa-cloud-download-alt" style="font-size:1.5rem;color:var(--primary-color)"></i>
                     </div>
                     <h3 style="margin:0 0 0.5rem;font-size:1.125rem;color:var(--text-primary)">${t('confirm.update.title')} v${updateInfo.latest}</h3>
-                    ${releaseNotes ? `<div style="max-height:120px;overflow-y:auto;text-align:left;padding:0.75rem;margin:0.75rem 0;background:var(--bg-tertiary);border-radius:var(--radius-lg,10px);border:1px solid var(--border-color);font-size:0.8rem;color:var(--text-secondary);line-height:1.5;white-space:pre-wrap">${releaseNotes}</div>` : ''}
+                    ${releaseNotes ? `<div style="max-height:120px;overflow-y:auto;text-align:left;padding:0.75rem;margin:0.75rem 0;background:var(--bg-tertiary);border-radius:var(--radius-lg,10px);border:1px solid var(--border-color);font-size:0.8rem;color:var(--text-secondary);line-height:1.5;white-space:pre-wrap">${escapeHtml(releaseNotes)}</div>` : ''}
                     <p style="margin:0.75rem 0 0.5rem;color:var(--text-secondary);font-size:0.85rem">${t('confirm.update.message')}</p>
                     <div style="display:flex;align-items:center;background:var(--bg-tertiary);border-radius:var(--radius-lg,10px);padding:0.6rem 1rem;margin:0.5rem 0;border:1px solid var(--border-color)">
                         <code style="flex:1;font-size:0.8rem;color:var(--text-primary);font-family:monospace;word-break:break-all">${updateCmd}</code>

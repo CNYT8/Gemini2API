@@ -66,3 +66,14 @@ def is_safe_url(url: str, *, allowed_schemes=("http", "https")) -> bool:
         return True
     except UnsafeURLError:
         return False
+
+
+def resolve_redirect_location(base_url: str, location: str) -> str:
+    """把 3xx 响应里的 Location（可能是相对路径）解析为绝对 URL。
+
+    供 file_upload 在手动跟随重定向前对每一跳重新做 assert_safe_url 用，
+    避免 SSRF 重定向绕过（VULN-005）。
+    """
+    from urllib.parse import urljoin
+
+    return urljoin(base_url, (location or "").strip())

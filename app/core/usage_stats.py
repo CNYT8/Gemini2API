@@ -96,7 +96,9 @@ class UsageStatsStore:
                     self._baseline = {
                         "request_count": last.get("request_count", 0),
                         "error_count": last.get("error_count", 0),
-                        "model_requests": last.get("model_requests", {}),
+                        # 必须 copy：否则 baseline.model_requests 与最后一个快照的 totals
+                        # 共享同一 dict，下次 record_snapshot 原地 += 会回写、污染历史（修复 #25）。
+                        "model_requests": dict(last.get("model_requests", {})),
                         "latency_sum_ms": last.get("latency_sum_ms", 0.0),
                         "latency_count": last.get("latency_count", 0),
                         "rotation_success": last.get("rotation_success", 0),
@@ -164,28 +166,52 @@ class UsageStatsStore:
         self._save()
 
     def get_summary(self) -> dict:
+        # 折入自上次快照以来仍在内存里、尚未 drain 的实时增量（latency/model/rotation），
+        # 使 summary 反映当前真实状态，而不是滞后一个 interval（默认 5min）/ 启动后全 0。
+        # peek() 此前是死代码，这里将其接上（修复 #27）。延迟导入避免任何 import 环。
+        try:
+            from app.core.usage_metrics import live_metrics
+            live = live_metrics.peek()
+        except Exception:
+            live = {
+                "model_requests": {}, "latency_sum_ms": 0.0, "latency_count": 0,
+                "latency_max_ms": 0.0, "rotation_success": 0, "rotation_failure": 0,
+            }
+
         if not self._snapshots:
+            # 尚无快照：用纯实时增量呈现（避免启动后 summary 全 0）。
+            lat_count = live.get("latency_count", 0)
+            avg_lat = round(live.get("latency_sum_ms", 0.0) / lat_count, 1) if lat_count > 0 else 0.0
             return {
                 "request_count": 0, "error_count": 0,
                 "active_accounts": 0, "total_accounts": 0,
-                "model_requests": {}, "avg_latency_ms": 0.0,
-                "max_latency_ms": 0.0, "rotation_success": 0,
-                "rotation_failure": 0, "uptime_seconds": 0,
+                "model_requests": dict(live.get("model_requests", {})),
+                "avg_latency_ms": avg_lat,
+                "max_latency_ms": live.get("latency_max_ms", 0.0),
+                "rotation_success": live.get("rotation_success", 0),
+                "rotation_failure": live.get("rotation_failure", 0),
+                "uptime_seconds": int(time.time() - self._start_time),
             }
         last = self._snapshots[-1]["totals"]
-        lat_count = last.get("latency_count", 0)
-        lat_sum = last.get("latency_sum_ms", 0.0)
+        # latency：快照累计 + 当前未 drain 的样本
+        lat_count = last.get("latency_count", 0) + live.get("latency_count", 0)
+        lat_sum = last.get("latency_sum_ms", 0.0) + live.get("latency_sum_ms", 0.0)
         avg_lat = round(lat_sum / lat_count, 1) if lat_count > 0 else 0.0
+        max_lat = max(last.get("latency_max_ms", 0.0), live.get("latency_max_ms", 0.0))
+        # model_requests：快照累计 + 当前未 drain 的增量（copy 后再叠加，不改动快照）
+        model_requests = dict(last.get("model_requests", {}))
+        for m, c in live.get("model_requests", {}).items():
+            model_requests[m] = model_requests.get(m, 0) + c
         return {
             "request_count": last.get("request_count", 0),
             "error_count": last.get("error_count", 0),
             "active_accounts": last.get("active_accounts", 0),
             "total_accounts": last.get("total_accounts", 0),
-            "model_requests": last.get("model_requests", {}),
+            "model_requests": model_requests,
             "avg_latency_ms": avg_lat,
-            "max_latency_ms": last.get("latency_max_ms", 0.0),
-            "rotation_success": last.get("rotation_success", 0),
-            "rotation_failure": last.get("rotation_failure", 0),
+            "max_latency_ms": max_lat,
+            "rotation_success": last.get("rotation_success", 0) + live.get("rotation_success", 0),
+            "rotation_failure": last.get("rotation_failure", 0) + live.get("rotation_failure", 0),
             "uptime_seconds": int(time.time() - self._start_time),
         }
 

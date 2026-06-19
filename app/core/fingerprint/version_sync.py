@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+from app.config import settings
 from app.core.fingerprint.config import fingerprint_config
 
 logger = logging.getLogger(__name__)
@@ -11,8 +12,6 @@ VERSION_CHECK_URL = (
     "https://versionhistory.googleapis.com/v1/chrome/platforms/win/channels/stable/versions"
     "?filter=version>100&order_by=version%20desc&page_size=1"
 )
-
-CHECK_INTERVAL = 24 * 3600
 
 
 async def check_latest_chrome_version() -> tuple[int, str] | None:
@@ -40,10 +39,10 @@ async def validate_impersonate_target(target: str) -> bool:
     """验证 curl_cffi AsyncSession 是否真正支持该 impersonate 目标（发起实际请求）"""
     try:
         from curl_cffi.requests import AsyncSession
-        s = AsyncSession(impersonate=target, timeout=10)
-        resp = await s.get("https://www.google.com/")
-        await s.close()
-        return resp.status_code == 200
+        # 用 async with 确保探测请求抛异常时也关闭会话，避免泄漏 curl 句柄/连接
+        async with AsyncSession(impersonate=target, timeout=10) as s:
+            resp = await s.get("https://www.google.com/")
+            return resp.status_code == 200
     except Exception:
         return False
 
@@ -88,4 +87,5 @@ async def version_sync_loop():
         except Exception as e:
             logger.error(f"版本同步异常: {e}")
 
-        await asyncio.sleep(CHECK_INTERVAL)
+        # 每轮读取实时配置，尊重 settings.version_sync_interval（单位：小时），不再硬编码 24h
+        await asyncio.sleep(max(1, settings.version_sync_interval) * 3600)

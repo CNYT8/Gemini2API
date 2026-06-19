@@ -37,15 +37,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      # Report-only for now (batches 2/3 still in flight): steps surface failures
-      # as annotations but do NOT block. Remove `continue-on-error` to promote to
-      # hard gates at the final whole-tree acceptance once all batches land.
+      # Hard quality gate: lint + tests BLOCK the workflow on failure so
+      # regressions (failing tests, E9/F-class lint errors) cannot merge green.
       - name: Lint (ruff)
-        continue-on-error: true
         run: ruff check .
 
       - name: Run tests (pytest)
-        continue-on-error: true
         run: pytest
 
   dependency-audit:

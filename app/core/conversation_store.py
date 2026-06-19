@@ -5,8 +5,10 @@
 同时本地备份对话历史，会话过期时自动 fallback 到拼接模式。
 """
 import os
+import re
 import json
 import time
+import hashlib
 import asyncio
 from collections import OrderedDict
 from pathlib import Path
@@ -14,6 +16,27 @@ from pathlib import Path
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data")) / "conversations"
 MAX_CONVERSATIONS = 200
 MAX_AGE_SECONDS = 3600 * 6
+
+# 仅允许“安全字符集”作为磁盘文件名的对话 id（字母/数字/下划线/连字符/点），
+# 且不含 ".." 段。客户端可控的 conversation_id 会被直接当作文件名使用，
+# 不做约束会造成路径穿越（写/删 DATA_DIR 之外的 *.json）。其它字符的 id
+# 退化为 sha256 摘要，既消除穿越风险又保持稳定映射。
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _safe_file_id(conv_id: str) -> str:
+    """把客户端可控的 conversation_id 映射为安全的磁盘文件名（防路径穿越）。"""
+    if (
+        isinstance(conv_id, str)
+        and conv_id
+        and ".." not in conv_id
+        and "/" not in conv_id
+        and "\\" not in conv_id
+        and _SAFE_ID_RE.match(conv_id)
+    ):
+        return conv_id
+    # 不安全/异常 id：用 sha256 摘要作为文件名
+    return "h_" + hashlib.sha256(str(conv_id).encode("utf-8")).hexdigest()
 
 
 class Conversation:
@@ -64,7 +87,7 @@ class ConversationStore:
             with open(index_file, "r") as f:
                 index = json.load(f)
             for entry in index[-MAX_CONVERSATIONS:]:
-                conv_file = DATA_DIR / f"{entry['id']}.json"
+                conv_file = DATA_DIR / f"{_safe_file_id(entry['id'])}.json"
                 if conv_file.exists():
                     with open(conv_file, "r") as f:
                         data = json.load(f)
@@ -75,7 +98,8 @@ class ConversationStore:
             pass
 
     def _save_conversation(self, conv: Conversation):
-        conv_file = DATA_DIR / f"{conv.id}.json"
+        # 防路径穿越：用 conv.id 派生的安全文件名而非原始 id
+        conv_file = DATA_DIR / f"{_safe_file_id(conv.id)}.json"
         with open(conv_file, "w") as f:
             json.dump(conv.to_dict(), f, ensure_ascii=False)
         self._save_index()
@@ -90,11 +114,11 @@ class ConversationStore:
         expired = [k for k, v in self._conversations.items() if now - v.updated_at > MAX_AGE_SECONDS]
         for k in expired:
             del self._conversations[k]
-            (DATA_DIR / f"{k}.json").unlink(missing_ok=True)
+            (DATA_DIR / f"{_safe_file_id(k)}.json").unlink(missing_ok=True)
         while len(self._conversations) > MAX_CONVERSATIONS:
             oldest_key = next(iter(self._conversations))
             del self._conversations[oldest_key]
-            (DATA_DIR / f"{oldest_key}.json").unlink(missing_ok=True)
+            (DATA_DIR / f"{_safe_file_id(oldest_key)}.json").unlink(missing_ok=True)
 
     async def get(self, conv_id: str) -> Conversation | None:
         async with self._lock:
@@ -118,7 +142,7 @@ class ConversationStore:
         async with self._lock:
             if conv_id in self._conversations:
                 del self._conversations[conv_id]
-                (DATA_DIR / f"{conv_id}.json").unlink(missing_ok=True)
+                (DATA_DIR / f"{_safe_file_id(conv_id)}.json").unlink(missing_ok=True)
                 self._save_index()
 
     async def list_all(self) -> list[dict]:

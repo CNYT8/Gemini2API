@@ -4,6 +4,7 @@ import json
 import hashlib
 import logging
 import time
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from threading import Lock
 from dataclasses import dataclass, asdict
@@ -52,6 +53,12 @@ class PersistentCookieJar:
         changed = False
         for name, value in response.cookies.items():
             with self._lock:
+                # 空值视为服务端删除指令：删除而非用空值覆盖有效凭据 Cookie。
+                if not value:
+                    if name in self._cookies:
+                        del self._cookies[name]
+                        changed = True
+                    continue
                 existing = self._cookies.get(name)
                 if existing is None or existing.value != value:
                     self._cookies[name] = StoredCookie(
@@ -77,14 +84,24 @@ class PersistentCookieJar:
             for sc in sc_values:
                 parsed = self._parse_set_cookie_header(sc)
                 if parsed:
-                    cn, cv = parsed
+                    cn, cv, expires = parsed
                     with self._lock:
+                        # 删除指令（空值 / Max-Age<=0 / Expires 已过期）：删除现有 Cookie，
+                        # 绝不用空值或已过期值覆盖仍有效的认证 Cookie（VULN-010 写容错）。
+                        is_deletion = (not cv) or (expires is not None and expires <= time.time())
+                        if is_deletion:
+                            if cn in self._cookies:
+                                del self._cookies[cn]
+                                changed = True
+                            continue
                         ex = self._cookies.get(cn)
-                        if ex is None or ex.value != cv:
+                        new_expires = expires if expires is not None else 0
+                        if ex is None or ex.value != cv or ex.expires != new_expires:
                             self._cookies[cn] = StoredCookie(
                                 name=cn,
                                 value=cv,
                                 domain=".google.com",
+                                expires=new_expires,
                                 secure=cn.startswith("__Secure"),
                             )
                             changed = True
@@ -96,11 +113,17 @@ class PersistentCookieJar:
 
     @staticmethod
     def _parse_set_cookie_header(raw: str):
-        """解析单条 Set-Cookie 头"""
+        """解析单条 Set-Cookie 头，返回 (name, value, expires) 三元组。
+
+        expires 为绝对 Unix 时间戳（秒）；无 Expires/Max-Age 属性时为 None。
+        Max-Age 优先级高于 Expires（RFC 6265）。Max-Age<=0 或 Expires 在过去 →
+        expires 取一个过去时间戳，供上层据此识别为删除指令。
+        """
         if not raw:
             return None
         try:
-            pair = raw.split(";", 1)[0].strip()
+            parts = raw.split(";")
+            pair = parts[0].strip()
             if "=" not in pair:
                 return None
             n, v = pair.split("=", 1)
@@ -108,7 +131,35 @@ class PersistentCookieJar:
             v = v.strip()
             if not n:
                 return None
-            return (n, v)
+
+            expires = None
+            max_age = None
+            expires_attr = None
+            for attr in parts[1:]:
+                if "=" not in attr:
+                    continue
+                k, av = attr.split("=", 1)
+                k = k.strip().lower()
+                av = av.strip()
+                if k == "max-age":
+                    max_age = av
+                elif k == "expires":
+                    expires_attr = av
+
+            if max_age is not None:
+                try:
+                    expires = time.time() + int(max_age)
+                except (ValueError, TypeError):
+                    expires = None
+            elif expires_attr:
+                try:
+                    dt = parsedate_to_datetime(expires_attr)
+                    if dt is not None:
+                        expires = dt.timestamp()
+                except (TypeError, ValueError, OverflowError):
+                    expires = None
+
+            return (n, v, expires)
         except Exception:
             return None
 

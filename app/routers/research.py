@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -75,8 +76,11 @@ def _extract_sub_questions(plan_text: str) -> list[str]:
             continue
 
         if in_questions_section and line:
-            # Remove numbering like "1. ", "2. ", etc.
-            cleaned = line.lstrip("0123456789.-) ").strip()
+            # Remove numbering like "1. ", "2) ", "- ", etc.
+            # 修复：原 line.lstrip("0123456789.-) ") 把字符集中的所有前导字符成片剥除，
+            # 会误删合法正文（如 "1. 100 best ..." 被剥成 "best ..."，丢掉 "100"）。
+            # 改用锚定正则，只去掉单个开头的编号前缀，保留其余文本（含前导数字）。
+            cleaned = re.sub(r"^\s*[-*\d]+[.)]?\s+", "", line).strip()
             if cleaned:
                 questions.append(cleaned)
 

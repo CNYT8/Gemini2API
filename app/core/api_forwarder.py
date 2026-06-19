@@ -13,8 +13,43 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.api_key_store import ApiKeyEntry
 from app.models.openai import ChatRequest, ChatResponse, Choice, ChoiceMessage, UsageInfo, StreamChunk, StreamChoice, StreamDelta
+from app.utils.net_guard import assert_safe_url, UnsafeURLError
 
 logger = logging.getLogger(__name__)
+
+
+def _build_safe_target_url(entry: ApiKeyEntry, suffix: str) -> str:
+    """根据存储的 base_url 构造出站 URL，并做两道防护：
+    1) base_url 缺失（None / 空串）时抛 ValueError，避免 None.rstrip 的 AttributeError 崩溃；
+    2) 用 SSRF 防护（assert_safe_url）校验目标主机不指向内网 / 环回 / 链路本地 / 云元数据，
+       与 fetch_models 等其他出站路径保持一致的威胁模型。
+
+    校验失败均抛 ValueError，由调用方转成结构化 400 响应（流式 / 非流式皆然）。
+    """
+    base_url = getattr(entry, "base_url", None)
+    if not base_url:
+        raise ValueError("base_url is not configured for this API key entry")
+    url = f"{base_url.rstrip('/')}{suffix}"
+    try:
+        assert_safe_url(url)
+    except UnsafeURLError as e:
+        # 不把解析到的内网 IP 回显给调用方（信息泄露），仅记日志、对外给通用提示
+        logger.warning(f"[forward] blocked unsafe base_url target: {e}")
+        raise ValueError("base_url is not allowed (resolves to a disallowed/internal address)")
+    return url
+
+
+def _bad_request(message: str) -> JSONResponse:
+    """统一的 400 错误响应（用于 base_url 缺失 / SSRF 拦截）。"""
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": {
+                "message": message,
+                "type": "invalid_request_error",
+            }
+        },
+    )
 
 
 async def forward_to_provider(
@@ -59,7 +94,13 @@ async def _forward_openai_compatible(
     req: ChatRequest
 ) -> StreamingResponse | JSONResponse:
     """Forward request to OpenAI-compatible endpoint."""
-    url = f"{entry.base_url.rstrip('/')}/chat/completions"
+    # 修复：base_url 可能为 None（schema 允许省略）→ 之前 .rstrip 直接 AttributeError 崩溃；
+    # 同时补上 SSRF 校验。URL 构造放在 StreamingResponse / try 之前，故失败必须在此处转成 400，
+    # 否则流式路径会抛出未捕获异常导致裸 500。
+    try:
+        url = _build_safe_target_url(entry, "/chat/completions")
+    except ValueError as e:
+        return _bad_request(str(e))
 
     headers = {
         "Authorization": f"Bearer {entry.api_key}",
@@ -154,8 +195,13 @@ async def _proxy_openai_stream(
                     yield f"data: {json.dumps(detail)}\n\n"
                     return
                 async for line in response.aiter_lines():
+                    # 修复：aiter_lines() 基于 splitlines() 已剥离行尾，并把 SSE 事件分隔的空行
+                    # 作为 "" 单独产出。原代码 `yield f"{line}\n"` 丢弃空行且只补一个 \n，
+                    # 导致下游收到的多个 data: 行之间没有空行分隔，被合并成一个未结束的事件，
+                    # 严格 SSE 客户端无法增量解析。这里对每个非空行补回 "\n\n"（含 data: [DONE]），
+                    # 恢复合法的 SSE 事件帧。
                     if line.strip():
-                        yield f"{line}\n"
+                        yield f"{line}\n\n"
     except httpx.RequestError as e:
         logger.error(f"Request error streaming from {provider}: {e}")
         yield f"data: {json.dumps({'error': {'message': f'Failed to connect to {provider}: {e}', 'type': 'connection_error'}})}\n\n"
@@ -170,7 +216,11 @@ async def _forward_anthropic(
     req: ChatRequest
 ) -> StreamingResponse | JSONResponse:
     """Forward request to Anthropic API with format conversion."""
-    url = f"{entry.base_url.rstrip('/')}/v1/messages"
+    # 修复：同 openai 路径——防 None base_url 崩溃 + SSRF 校验，失败转成结构化 400。
+    try:
+        url = _build_safe_target_url(entry, "/v1/messages")
+    except ValueError as e:
+        return _bad_request(str(e))
 
     headers = {
         "x-api-key": entry.api_key,
@@ -369,7 +419,8 @@ async def _anthropic_stream_to_openai(response: httpx.Response, model: str) -> A
         data_str = line[6:]  # Remove "data: " prefix
 
         if data_str == "[DONE]":
-            yield "data: [DONE]\n\n"
+            # Anthropic 实际不发该哨兵（以 message_stop 结束），此分支仅为兼容性保留。
+            # 真正的 [DONE] 在循环结束后统一补发，故这里只 break，不重复 yield。
             break
 
         try:
@@ -434,6 +485,11 @@ async def _anthropic_stream_to_openai(response: httpx.Response, model: str) -> A
 
         except json.JSONDecodeError:
             continue
+
+    # 修复：Anthropic Messages 流以 message_stop 结束、从不发送 data: [DONE]，
+    # 而 OpenAI 客户端期望以 [DONE] 标记流结束。上游流自然结束后无条件补发终止哨兵，
+    # 避免严格客户端（等待 [DONE] 才判定完成的 SDK）挂起 / 误判未完成。
+    yield "data: [DONE]\n\n"
 
 
 async def _forward_gemini_api(

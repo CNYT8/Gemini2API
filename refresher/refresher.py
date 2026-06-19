@@ -17,7 +17,17 @@ STATE_DIR = os.path.join(DATA_DIR, "browser_states")
 COOKIES_OUTPUT = os.path.join(DATA_DIR, "refreshed_cookies.json")
 GEMINI2API_URL = os.environ.get("GEMINI2API_URL", "http://gemini2api:5918")
 API_KEY = os.environ.get("API_KEY", "")
-REFRESH_INTERVAL = int(os.environ.get("REFRESH_INTERVAL_SECONDS", "480"))
+# /admin/* 路由由 verify_admin_key 鉴权：ADMIN_API_KEY 设置时用它，否则回退 API_KEY，
+# 与服务端 auth.verify_admin_key 的优先级保持一致（否则通知恒 401）。
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
+ADMIN_KEY = ADMIN_API_KEY or API_KEY
+# 续期周期：优先读文档/.env 里的 REFRESH_INTERVAL（单位=分钟，与 README/主服务一致），
+# 兼容旧的 REFRESH_INTERVAL_SECONDS（单位=秒）；最终统一换算成秒。
+_interval_seconds = os.environ.get("REFRESH_INTERVAL_SECONDS")
+if _interval_seconds is not None:
+    REFRESH_INTERVAL = int(_interval_seconds)
+else:
+    REFRESH_INTERVAL = int(float(os.environ.get("REFRESH_INTERVAL", "8")) * 60)
 SINGLE_RUN = os.environ.get("SINGLE_RUN", "false").lower() == "true"
 
 
@@ -40,20 +50,32 @@ def ensure_state_dir(account_id):
     return path
 
 
+def _state_psid(state_file):
+    """读取 state.json 中当前的 __Secure-1PSID，用于判断配置是否已轮换。"""
+    try:
+        with open(state_file, "r") as f:
+            state = json.load(f)
+        for c in state.get("cookies", []):
+            if c.get("name") == "__Secure-1PSID":
+                return c.get("value")
+    except Exception:
+        return None
+    return None
+
+
 def inject_cookies_to_state(state_dir, psid, psidts):
     state_file = os.path.join(state_dir, "state.json")
-    if os.path.exists(state_file):
-        return
-    state = {
-        "cookies": [
-            {"name": "__Secure-1PSID", "value": psid, "domain": ".google.com", "path": "/", "secure": True, "httpOnly": True, "sameSite": "None"},
-            {"name": "__Secure-1PSIDTS", "value": psidts, "domain": ".google.com", "path": "/", "secure": True, "httpOnly": True, "sameSite": "None"},
-        ],
-        "origins": []
-    }
+    cookies = [
+        {"name": "__Secure-1PSID", "value": psid, "domain": ".google.com", "path": "/", "secure": True, "httpOnly": True, "sameSite": "None"},
+    ]
+    # 仅在 psidts 非空时写入：present-but-empty 的 __Secure-1PSIDTS 与“缺失”语义不同，
+    # 空值会污染浏览器状态、阻止 Google 前端 JS 重新签发 token（与主服务 cookie_jar 的处理一致）。
+    if psidts:
+        cookies.append({"name": "__Secure-1PSIDTS", "value": psidts, "domain": ".google.com", "path": "/", "secure": True, "httpOnly": True, "sameSite": "None"})
+    state = {"cookies": cookies, "origins": []}
     with open(state_file, "w") as f:
         json.dump(state, f)
-    print(f"  [init] Injected initial cookies for first run")
+    print(f"  [init] Injected cookies from config into state")
 
 
 def refresh_account(browser, account):
@@ -62,7 +84,10 @@ def refresh_account(browser, account):
     state_dir = ensure_state_dir(account_id)
     state_file = os.path.join(state_dir, "state.json")
 
-    if not os.path.exists(state_file):
+    # 首次运行注入，或当 refresher_accounts.json 中的源 PSID 已被运营者轮换
+    # （与 state.json 中已持久化的 PSID 不一致）时重新注入——否则旋转后的凭据被永久忽略，
+    # 过期账号无法通过编辑配置恢复。
+    if not os.path.exists(state_file) or _state_psid(state_file) != account["psid"]:
         inject_cookies_to_state(state_dir, account["psid"], account.get("psidts", ""))
 
     print(f"  [{label}] Opening browser context...")
@@ -97,8 +122,9 @@ def refresh_account(browser, account):
 
 def notify_gemini2api(account_id, psid, psidts):
     headers = {"Content-Type": "application/json"}
-    if API_KEY:
-        headers["Authorization"] = f"Bearer {API_KEY}"
+    # /admin/* 用 ADMIN_KEY（ADMIN_API_KEY 优先，否则回退 API_KEY）。
+    if ADMIN_KEY:
+        headers["Authorization"] = f"Bearer {ADMIN_KEY}"
 
     # 优先按账号 ID 精确更新（多账号隔离）
     try:
@@ -122,9 +148,15 @@ def notify_gemini2api(account_id, psid, psidts):
             if resp2.status_code == 200:
                 print(f"  [notify] cookies reloaded via POST (account not in pool)")
                 return True
+            elif resp2.status_code == 401:
+                print(f"  [notify] auth rejected (401) — set ADMIN_API_KEY/API_KEY to match the server's admin key")
+                return False
             else:
                 print(f"  [notify] reload failed: {resp2.status_code} {resp2.text[:100]}")
                 return False
+        elif resp.status_code == 401:
+            print(f"  [notify] auth rejected (401) — set ADMIN_API_KEY/API_KEY to match the server's admin key")
+            return False
         else:
             print(f"  [notify] PUT failed: {resp.status_code} {resp.text[:100]}")
             return False
@@ -186,7 +218,7 @@ if __name__ == "__main__":
         print("\n[Single run mode] Done, exiting.")
         sys.exit(0)
 
-    print(f"Gemini Cookie Refresher started (interval: {REFRESH_INTERVAL}s)")
+    print(f"Gemini Cookie Refresher started (interval: {REFRESH_INTERVAL}s; set REFRESH_INTERVAL in minutes)")
     while True:
         try:
             refresh_all()

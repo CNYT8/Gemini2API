@@ -75,9 +75,9 @@
 | 2026-05-31 17:00:00 | v1.6.4 - 三家接口暴露标准裸路径（/v1/chat/completions、/v1/messages、/v1beta/...），主流 SDK 开箱即用；修复部署机制（docker-compose 由 build 改 image，docker compose pull 真正生效） |
 | 2026-05-31 14:10:00 | v1.6.3 - 图片/文件上传支持（OpenAI/Claude/Gemini 多模态）；模型改用网页版真实数据 + 对外固定稳定名（gemini-pro/flash/flash-thinking）；重启不再丢 Cookie |
 | 2026-05-19 20:00:00 | v1.6.2 - 会话 5 分钟无操作自动过期登出 |
-| 2025-05-18 16:30:00 | v1.6.1 - 深色主题全面修复、检查更新弹窗美化、GitHub Actions 自动构建镜像、failover 故障转移策略 |
-| 2025-05-17 23:20:00 | 模型列表统一为用户友好名称，新增思考模式（gemini-2.5-flash-thinking）和 Pro 模式，Playground 对话上下文修复 |
-| 2025-05-17 22:30:00 | 容器时区修正为 Asia/Shanghai，日志显示北京时间 |
+| 2026-05-18 16:30:00 | v1.6.1 - 深色主题全面修复、检查更新弹窗美化、GitHub Actions 自动构建镜像、failover 故障转移策略 |
+| 2026-05-17 23:20:00 | 模型列表统一为用户友好名称，新增思考模式（gemini-2.5-flash-thinking）和 Pro 模式，Playground 对话上下文修复 |
+| 2026-05-17 22:30:00 | 容器时区修正为 Asia/Shanghai，日志显示北京时间 |
 
 ---
 
@@ -412,14 +412,48 @@ response = client.chat.completions.create(
 
 ### 管理接口（`/admin`）
 
+> 完整管理端点（含请求/响应示例）见 [API.md](API.md)，下表为完整列表。
+
 | 方法 | 端点 | 功能 |
 |------|------|------|
 | GET | `/status` | 服务状态（账号池概览 + 轮询策略） |
+| GET | `/system-info` | 系统信息（版本/Python/OS/内存/CPU/PID/运行模式） |
 | GET | `/accounts` | 所有账号列表及状态 |
 | POST | `/accounts` | 动态添加新账号 |
 | DELETE | `/accounts/{id}` | 移除指定账号 |
 | GET | `/accounts/{id}/check` | 检测单个账号状态 |
+| GET | `/check-account` | 检测所有账号状态 |
 | POST | `/reload-cookies` | 热更新 Cookie（无需重启容器） |
+| PUT | `/accounts/{id}/cookies` | 更新指定账号的 Cookie |
+| GET | `/health-history` | 最近健康检查记录 |
+| GET | `/usage-stats/summary` | 用量统计概览 |
+| GET | `/usage-stats/history` | 历史趋势数据 |
+| GET | `/settings` | 获取当前可编辑配置（分组返回） |
+| POST | `/settings` | 批量更新配置（写入 .env + 热更新内存） |
+| GET | `/api-keys` | API Key 列表（密钥脱敏） |
+| GET | `/api-keys/catalog` | Provider 目录（内置模型列表） |
+| POST | `/api-keys` | 添加 API Key |
+| DELETE | `/api-keys/{id}` | 删除 API Key |
+| PATCH | `/api-keys/{id}/status` | 切换 Key 状态（启用/禁用） |
+| PATCH | `/api-keys/{id}/label` | 修改 Key 标签 |
+| POST | `/api-keys/import` | 批量导入 Key |
+| GET | `/api-keys/export` | 导出所有 Key（默认脱敏，`?reveal=true` 取明文） |
+| POST | `/api-keys/batch-delete` | 批量删除 |
+| POST | `/api-keys/models` | 探测某 Provider/base_url 下可用模型列表 |
+| GET | `/verify` | 验证 API Key 有效性（登录用） |
+| POST | `/restart` | 重启服务（面板右上角一键重启） |
+| GET | `/check-update` | 检查是否有新版本 |
+| POST | `/update` | 触发更新到最新版本 |
+| GET | `/logs` | 结构化日志分页查询 |
+| GET | `/logs/state` | 日志记录状态 |
+| POST | `/logs/state` | 更新日志记录状态 |
+| POST | `/logs/clear` | 清空日志 |
+| GET | `/logs/{id}` | 单条日志详情 |
+| GET | `/model-mapping` | 获取所有模型映射 |
+| POST | `/model-mapping` | 添加/更新模型映射 |
+| DELETE | `/model-mapping/{alias}` | 删除模型映射 |
+| GET | `/web-chats` | 列出账号在 Gemini 网页端堆积的会话（只读） |
+| POST | `/cleanup-web-chats` | 手动触发清理超期网页会话（后台异步执行） |
 
 ---
 
@@ -439,8 +473,29 @@ response = client.chat.completions.create(
 | `RATE_LIMIT_MAX` | ❌ | `10` | 窗口内最大请求数 |
 | `HEALTH_CHECK_ENABLED` | ❌ | `true` | 启用定时账号状态检测 |
 | `HEALTH_CHECK_INTERVAL` | ❌ | `5` | 检测间隔（分钟） |
+| `ACCOUNTS_FILE` | ❌ | `accounts.json` | 多账号配置文件路径（不存在则使用环境变量单账号模式） |
 | `ROTATION_STRATEGY` | ❌ | `round-robin` | 轮询策略：`round-robin`（轮询）/ `failover`（故障转移） |
-| `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `3` | 每账号最大并发请求数 |
+| `MAX_CONCURRENT_PER_ACCOUNT` | ❌ | `8` | 每账号最大并发请求数 |
+| `ACQUIRE_TIMEOUT` | ❌ | `60.0` | 并发满载时排队等待可用槽位的上限（秒），等不到才报错 |
+| `SAME_ACCOUNT_5XX_RETRIES` | ❌ | `1` | 遇 5xx 时同账号快速重试次数（不长退避），仍失败则 failover 换号 |
+| `FAILOVER_COOLDOWN` | ❌ | `30.0` | 被 5xx 限流的账号进入冷却的时长（秒），期间不优先选 |
+| `FINGERPRINT_CONFIG_PATH` | ❌ | `data/fingerprint.json` | 指纹配置文件路径 |
+| `VERSION_SYNC_ENABLED` | ❌ | `true` | 启用 Chrome 版本自动同步 |
+| `VERSION_SYNC_INTERVAL` | ❌ | `24` | 版本同步间隔（小时） |
+| `JITTER_ENABLED` | ❌ | `true` | 启用请求时间抖动（模拟人类行为） |
+| `USAGE_STATS_ENABLED` | ❌ | `true` | 启用用量统计（时序快照 + 持久化） |
+| `USAGE_STATS_INTERVAL` | ❌ | `300` | 快照采集间隔（秒） |
+| `USAGE_STATS_RETENTION_DAYS` | ❌ | `30` | 历史数据保留天数 |
+| `MODEL_WHITELIST` | ❌ | — | 模型白名单（逗号分隔，为空则不过滤；非空时过滤各 `/models` 列表） |
+| `CHAT_CLEANUP_ENABLED` | ❌ | `true` | 启用 Gemini 网页端会话自动清理 |
+| `CHAT_CLEANUP_KEEP_HOURS` | ❌ | `24.0` | 网页会话保留时长（小时），超过则清理 |
+| `CHAT_CLEANUP_INTERVAL_HOURS` | ❌ | `6.0` | 自动清理任务运行间隔（小时） |
+| `CHAT_CLEANUP_SKIP_PINNED` | ❌ | `true` | 清理时跳过置顶会话 |
+| `ADMIN_API_KEY` | ❌ | — | 管理面板/`/admin` 独立鉴权 key（留空则回退用 `API_KEY`） |
+| `CORS_ALLOW_ORIGINS` | ❌ | `*` | CORS 允许来源（逗号分隔，`*` 表示全部） |
+| `CORS_ALLOW_CREDENTIALS` | ❌ | `true` | CORS 是否允许携带凭据 |
+| `IMAGE_DOWNLOAD_SIZE_SUFFIX` | ❌ | `=s2048` | 生图代下载尺寸后缀（`=s0` 为全分辨率原图） |
+| `IMAGE_DOWNLOAD_TIMEOUT` | ❌ | `25.0` | 单次图片下载 HTTP 超时（秒） |
 
 ---
 

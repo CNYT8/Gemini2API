@@ -7,6 +7,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.config import settings
 from app.core.account_pool import account_pool as gemini_client
 from app.core.stream import split_into_chunks, format_sse
 from app.models.claude import (
@@ -18,6 +19,20 @@ from app.utils.prompt import build_prompt_from_messages, extract_attachments
 from app.core.limiter import limiter, dynamic_rate_limit, rate_limit_exempt
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_model_whitelist(models: list[str]) -> list[str]:
+    """按 MODEL_WHITELIST（逗号分隔）过滤模型列表；为空表示不过滤（放行全部）。
+    让文档化的 MODEL_WHITELIST 真正生效——只暴露白名单内的模型。"""
+    raw = (settings.model_whitelist or "").strip()
+    if not raw:
+        return models
+    allowed = {m.strip() for m in raw.split(",") if m.strip()}
+    if not allowed:
+        return models
+    return [m for m in models if m in allowed]
+
+
 # router：对话主入口（messages），同时挂在 /claude/v1 和裸 /v1（开箱即用）
 router = APIRouter(tags=["Claude"])
 # models_router：模型列表/详情，仅挂在 /claude/v1，避免裸 /v1/models 与 OpenAI 撞车
@@ -26,7 +41,7 @@ models_router = APIRouter(tags=["Claude"])
 
 @models_router.get("/models")
 async def list_models():
-    models = gemini_client.models
+    models = _apply_model_whitelist(list(gemini_client.models))
     data = [
         ClaudeModelInfo(
             id=m,
@@ -40,7 +55,8 @@ async def list_models():
 
 @models_router.get("/models/{model_id:path}")
 async def get_model(model_id: str):
-    if model_id not in gemini_client.models:
+    # 与 /models 列表保持一致：被白名单挡掉的模型也视为 not found
+    if model_id not in _apply_model_whitelist(list(gemini_client.models)):
         return JSONResponse(
             status_code=404,
             content={"type": "error", "error": {"type": "not_found", "message": f"Model {model_id} not found"}},
@@ -190,11 +206,9 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
     try:
         async for evt in gemini_client.generate_stream(prompt, model, "", attachments):
             if evt.get("type") == "delta":
+                # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                 delta = evt.get("text", "")
-                if evt.get("_replace"):
-                    full_text = delta
-                else:
-                    full_text += delta
+                full_text += delta
                 if delta:
                     yield format_sse({
                         "type": "content_block_delta",
@@ -202,7 +216,20 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
                         "delta": {"type": "text_delta", "text": delta},
                     })
             elif evt.get("type") == "final":
-                full_text = evt.get("text", full_text)
+                # final.text 是过滤完占位串的完整文本，可能比已流出的 full_text 多出
+                # （流式时被 hold 住的尾部）。补发缺失尾部，保证客户端拿到完整内容。
+                final_text = evt.get("text", full_text)
+                if final_text.startswith(full_text) and len(final_text) > len(full_text):
+                    tail = final_text[len(full_text):]
+                    full_text = final_text
+                    if tail:
+                        yield format_sse({
+                            "type": "content_block_delta",
+                            "index": 0,
+                            "delta": {"type": "text_delta", "text": tail},
+                        })
+                else:
+                    full_text = final_text
     except Exception as e:
         yield format_sse({
             "type": "content_block_delta",

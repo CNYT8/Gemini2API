@@ -6,7 +6,24 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import settings
-from app.core.account_pool import account_pool
+from app.core.account_pool import account_pool, RotationStrategy
+
+# 这些字段语义上是计数/间隔，必须为非负（其中并发上限至少为 1）；用于域校验，
+# 防止把负数/0 等会让服务在下次启动时无法构造 Settings 或行为异常的值写进 .env。
+_NON_NEGATIVE_FIELDS = {
+    "refresh_interval",
+    "max_retries",
+    "rate_limit_window",
+    "rate_limit_max",
+    "health_check_interval",
+    "usage_stats_interval",
+    "usage_stats_retention_days",
+    "chat_cleanup_keep_hours",
+    "chat_cleanup_interval_hours",
+}
+_POSITIVE_FIELDS = {
+    "max_concurrent_per_account",  # 并发上限必须 >= 1
+}
 
 logger = logging.getLogger(__name__)
 
@@ -191,29 +208,83 @@ async def get_settings() -> SettingsResponse:
     return SettingsResponse(**grouped)
 
 
+def _validate_settings_domain(updates: Dict[str, Any]) -> None:
+    """对每个待更新值做类型 + 取值域校验（任何持久化之前）。
+
+    只做类型检查不够：type-correct 但取值非法的值（如 rotation_strategy='garbage'、
+    或因 bool 是 int 子类导致 True 通过 int 检查）会被写进 .env，并在下次启动时
+    让 RotationStrategy(...) / Settings() 构造抛异常，永久 brick 启动。
+    这里在写盘前拒绝这些值。
+    """
+    for key, value in updates.items():
+        expected_type = FIELD_TYPES.get(key)
+        if expected_type is None:
+            continue
+
+        # bool 是 int 的子类：int/float 字段必须显式拒绝 bool，
+        # 否则 JSON true 会被当成合法 int 写进 .env 破坏下次启动。
+        if expected_type in (int, float) and isinstance(value, bool):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Setting '{key}' must be of type {expected_type.__name__}, got bool",
+            )
+
+        if not isinstance(value, expected_type):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Setting '{key}' must be of type {expected_type.__name__}, got {type(value).__name__}",
+            )
+
+        # 取值域：计数/间隔不允许负数，并发上限至少为 1
+        if key in _NON_NEGATIVE_FIELDS and value < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Setting '{key}' must be >= 0",
+            )
+        if key in _POSITIVE_FIELDS and value < 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Setting '{key}' must be >= 1",
+            )
+
+    # rotation_strategy 必须是 RotationStrategy 枚举的合法成员，否则下次启动时
+    # account_pool 模块级实例化会 RotationStrategy(value) 抛 ValueError 阻断导入。
+    if "rotation_strategy" in updates:
+        valid = {s.value for s in RotationStrategy}
+        if updates["rotation_strategy"] not in valid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Setting 'rotation_strategy' must be one of {sorted(valid)}",
+            )
+
+
 @router.post("", response_model=SettingsResponse)
 async def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
     """Update application settings. Updates both .env file and in-memory settings."""
     try:
-        # Validate all settings before making any changes
-        for key, value in request.settings.items():
-            expected_type = FIELD_TYPES.get(key)
-            if expected_type and not isinstance(value, expected_type):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Setting '{key}' must be of type {expected_type.__name__}, got {type(value).__name__}"
-                )
+        # 1) 写盘前完成全部类型 + 取值域校验（包含 rotation_strategy 枚举校验）
+        _validate_settings_domain(request.settings)
 
-        # Update .env file
+        # 2) 先更新内存（含对 account_pool set_strategy/set_max_concurrent 的真实生效），
+        #    成功后才写 .env；失败则回滚内存，保证 .env 不会被写入会 brick 启动的坏值。
+        snapshot = {key: getattr(settings, key) for key in request.settings if hasattr(settings, key)}
+        try:
+            _update_in_memory_settings(request.settings)
+        except Exception:
+            # 回滚已改动的内存值，避免半更新状态
+            for key, old in snapshot.items():
+                object.__setattr__(settings, key, old)
+            raise
+
+        # 3) 内存更新成功，持久化到 .env
         _update_env_file(request.settings)
-
-        # Update in-memory settings
-        _update_in_memory_settings(request.settings)
 
         # Return updated settings
         grouped = _get_grouped_settings()
         return SettingsResponse(**grouped)
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

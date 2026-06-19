@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from app.core.gemini_client import GeminiWebClient, HTTPStatusError
 from app.config import settings
 from app.core.usage_metrics import live_metrics
+from app.utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,9 @@ class AccountPool:
         # Condition 自带一把锁，既保护账号列表的并发访问，又用于并发满载时排队等待。
         self._cond = asyncio.Condition()
         self._robin_index = 0
+        # 单调递增的 id 计数器：用 len() 生成 id 在删除中间账号后会与现存 id 撞号，
+        # 故改用永不回退的计数器，确保 id 全程唯一（见 add_account）。
+        self._next_id_seq = 0
         self._strategy = RotationStrategy(settings.rotation_strategy)
         self._max_concurrent = settings.max_concurrent_per_account
         # 并发满载时排队等待上限（秒）。等不到可用槽位才报错，而不是立即拒绝，
@@ -106,16 +110,44 @@ class AccountPool:
         logger.info(f"Account pool ready: {active}/{self.total_count} active")
 
     def _load_from_file(self, path: Path):
-        data = json.loads(path.read_text())
+        # 整文件损坏（半截 JSON/断电）时容错：记录日志后当作空池，绝不让单个坏文件
+        # 在 initialize() 期间抛异常把整个进程启动卡死（VULN-010 读容错）。
+        try:
+            data = json.loads(path.read_text())
+        except Exception as e:
+            logger.error(f"accounts file {path} is corrupt, starting with empty pool: {e}")
+            return
         accounts_data = data if isinstance(data, list) else data.get("accounts", [])
         for i, item in enumerate(accounts_data):
-            account = Account(
-                id=item.get("id", f"account-{i}"),
-                psid=item["psid"].strip().strip('"').strip("'").rstrip(";"),
-                psidts=item.get("psidts", "").strip().strip('"').strip("'").rstrip(";"),
-                label=item.get("label", f"account-{i}"),
-            )
+            # 单条坏记录（非 dict / 缺 psid）跳过并告警，保留其余有效账号。
+            try:
+                if not isinstance(item, dict):
+                    raise TypeError("not an object")
+                psid = item.get("psid")
+                if not psid:
+                    raise KeyError("psid")
+                account = Account(
+                    id=item.get("id", f"account-{i}"),
+                    psid=psid.strip().strip('"').strip("'").rstrip(";"),
+                    psidts=(item.get("psidts") or "").strip().strip('"').strip("'").rstrip(";"),
+                    label=item.get("label", f"account-{i}"),
+                )
+            except Exception as e:
+                logger.warning(f"Skipping corrupt account entry #{i} in {path}: {e}")
+                continue
             self._accounts.append(account)
+        # 把计数器推到所有现存 account-N 后端的下一位，避免后续 add_account 撞号。
+        self._sync_id_seq()
+
+    def _sync_id_seq(self):
+        """让 _next_id_seq 大于所有现存 'account-<n>' 的数字后缀，保证后续生成的 id 唯一。"""
+        max_seq = -1
+        for a in self._accounts:
+            if a.id.startswith("account-"):
+                suffix = a.id[len("account-"):]
+                if suffix.isdigit():
+                    max_seq = max(max_seq, int(suffix))
+        self._next_id_seq = max(self._next_id_seq, max_seq + 1)
 
     def _add_from_env(self):
         account = Account(
@@ -244,10 +276,24 @@ class AccountPool:
             self._cond.notify(1)
 
     def _pick_round_robin(self, available: list[Account]) -> Account:
-        self._robin_index = self._robin_index % len(available)
-        account = available[self._robin_index]
-        self._robin_index = (self._robin_index + 1) % len(available)
-        return account
+        # 在「稳定的全量账号顺序」self._accounts 上做轮转，而不是在每次调用都变长度的
+        # 过滤子集 available 上取模——后者会因 busy/cooldown/exclude 的成员变动让同一个
+        # _robin_index 映射到不同位置，破坏轮转公平性（同号被反复选中或别的号被跳过）。
+        # 这里从上次位置之后开始扫描稳定列表，返回第一个属于 available 的账号，
+        # 并把 _robin_index 钉到它在稳定列表中的位置，使轮转跨成员变化保持稳定。
+        n = len(self._accounts)
+        if n == 0:
+            return available[0]
+        available_set = set(id(a) for a in available)
+        start = (self._robin_index + 1) % n
+        for offset in range(n):
+            idx = (start + offset) % n
+            cand = self._accounts[idx]
+            if id(cand) in available_set:
+                self._robin_index = idx
+                return cand
+        # 理论不可达（available 至少含一个 self._accounts 中的账号）；兜底返回首个候选。
+        return available[0]
 
     def _pick_failover(self, available: list[Account]) -> Account:
         for a in self._accounts:
@@ -256,7 +302,10 @@ class AccountPool:
         return available[0]
 
     async def add_account(self, psid: str, psidts: str, label: str = "") -> Account:
-        account_id = f"account-{len(self._accounts)}"
+        # 用单调计数器生成 id，删除中间账号后也绝不撞号（不再用易撞号的 len()）。
+        self._sync_id_seq()
+        account_id = f"account-{self._next_id_seq}"
+        self._next_id_seq += 1
         account = Account(
             id=account_id,
             psid=psid.strip().strip('"').strip("'").rstrip(";"),
@@ -489,7 +538,8 @@ class AccountPool:
                 "label": a.label,
             })
         path = Path(settings.accounts_file)
-        path.write_text(json.dumps({"accounts": accounts_data}, indent=2, ensure_ascii=False))
+        # 原子写：accounts.json 存 PSID 凭据，写入中途崩溃/断电不得截断成半截 JSON（VULN-010）。
+        atomic_write_text(path, json.dumps({"accounts": accounts_data}, indent=2, ensure_ascii=False))
 
     async def shutdown(self):
         for account in self._accounts:

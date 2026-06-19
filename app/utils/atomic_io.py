@@ -23,6 +23,17 @@ def atomic_write_text(path: Union[str, Path], data: str, encoding: str = "utf-8"
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, target)
+        # rename 本身（目录项更新）在多数 POSIX 文件系统上要 fsync 父目录后才保证
+        # 崩溃后持久；否则断电可能丢失这次 rename，目标回退到旧版本。补 fsync 父目录。
+        # （Windows 无 O_DIRECTORY，整体 try/except 兜底为 no-op，不破坏默认部署。）
+        try:
+            dfd = os.open(str(target.parent), os.O_DIRECTORY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except (OSError, AttributeError):
+            pass
     except BaseException:
         try:
             os.unlink(tmp)

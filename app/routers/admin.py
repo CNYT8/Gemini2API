@@ -42,12 +42,22 @@ class AddAccountRequest(BaseModel):
 
 @router.post("/reload-cookies")
 async def reload_cookies(req: ReloadCookiesRequest = None):
+    # 修复：result 仅在 `if account.client:` 内赋值，若账号池为空或所有账号无 client，
+    # 循环体不执行、result 始终未绑定，后续 result.get(...) 会抛 UnboundLocalError
+    # （显式 cookie 分支直接 500，.env 分支被误判为 "Failed to read .env"），
+    # 且末尾 "No accounts available" 成为死代码。初始化 result=None 并在循环后兜底返回 503。
     if req and (req.psid or req.psidts):
+        result = None
         for account in account_pool.accounts:
             if account.client:
                 result = await account.client.reload_cookies(psid=req.psid, psidts=req.psidts)
                 if result.get("success"):
                     return {"status": "ok", "message": "Cookies reloaded successfully", "healthy": True}
+        if result is None:
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"message": "No accounts available", "type": "reload_error"}},
+            )
         return JSONResponse(
             status_code=503,
             content={"error": {"message": result.get("error", "Cookie reload failed"), "type": "reload_error"}},
@@ -56,6 +66,7 @@ async def reload_cookies(req: ReloadCookiesRequest = None):
         from app.config import Settings
         try:
             fresh = Settings()
+            result = None
             for account in account_pool.accounts:
                 if account.client:
                     result = await account.client.reload_cookies(
@@ -64,6 +75,11 @@ async def reload_cookies(req: ReloadCookiesRequest = None):
                     )
                     if result.get("success"):
                         return {"status": "ok", "message": "Cookies reloaded successfully", "healthy": True}
+            if result is None:
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": {"message": "No accounts available", "type": "reload_error"}},
+                )
             return JSONResponse(
                 status_code=503,
                 content={"error": {"message": result.get("error", "Cookie reload failed"), "type": "reload_error"}},
@@ -73,11 +89,6 @@ async def reload_cookies(req: ReloadCookiesRequest = None):
                 status_code=500,
                 content={"error": {"message": f"Failed to read .env: {e}", "type": "config_error"}},
             )
-
-    return JSONResponse(
-        status_code=503,
-        content={"error": {"message": "No accounts available", "type": "reload_error"}},
-    )
 
 
 @router.get("/status")

@@ -10,19 +10,20 @@ Gemini Web 文件/图片上传模块。
 import asyncio
 import logging
 
-from app.utils.net_guard import is_safe_url
+from app.utils.net_guard import is_safe_url, resolve_redirect_location
 
 logger = logging.getLogger(__name__)
 
 UPLOAD_URL = "https://content-push.googleapis.com/upload"
 
 MAX_REMOTE_SIZE = 20 * 1024 * 1024  # 远程 URL 下载上限 20MB
+MAX_REMOTE_REDIRECTS = 5  # 手动跟随重定向的最大跳数，防 SSRF 重定向链绕过
 
 
 async def _resolve_bytes(http, att: dict) -> tuple[bytes, str, str] | None:
     """把 attachment 描述解析为 (data, filename, mime)。
     data URI 已在 prompt.extract_attachments 解码为 bytes；
-    http(s) URL 在这里下载（限制大小，防 SSRF 留给上层网络策略）。
+    http(s) URL 在这里下载（限制大小，防 SSRF）。
     """
     filename = att.get("filename", "upload.bin")
     mime = att.get("mime", "") or "application/octet-stream"
@@ -33,14 +34,18 @@ async def _resolve_bytes(http, att: dict) -> tuple[bytes, str, str] | None:
     url = att.get("url")
     if not url:
         return None
-    # SSRF 防护（VULN-005）：拒绝指向内网/环回/链路本地/云元数据的远程附件 URL，公网 http(s) 正常放行
-    if not is_safe_url(url):
-        logger.warning(f"[upload] blocked unsafe remote url: {url[:80]}")
-        return None
     try:
-        resp = await http.get(url, timeout=30)
+        resp = await _safe_remote_get(http, url)
+        if resp is None:
+            return None
         if resp.status_code != 200:
             logger.warning(f"[upload] remote fetch {resp.status_code}: {url[:80]}")
+            return None
+        # 大小限制（VULN-005）：先看 Content-Length 头，再以实际字节兜底，
+        # 防止超大响应被完整缓冲后才发现超限
+        clen = resp.headers.get("content-length")
+        if clen and clen.isdigit() and int(clen) > MAX_REMOTE_SIZE:
+            logger.warning(f"[upload] remote file too large (content-length={clen}): {url[:80]}")
             return None
         data = resp.content
         if len(data) > MAX_REMOTE_SIZE:
@@ -54,6 +59,35 @@ async def _resolve_bytes(http, att: dict) -> tuple[bytes, str, str] | None:
     except Exception as e:
         logger.warning(f"[upload] remote fetch failed: {e}")
         return None
+
+
+async def _safe_remote_get(http, url: str):
+    """带 SSRF 防护地下载远程 URL：禁用自动重定向，对初始 URL 及每一跳的
+    Location 都重新跑 assert_safe_url（VULN-005 重定向绕过修复）。
+
+    curl_cffi 默认跟随重定向，攻击者可让一个公网 URL 302 到
+    http://169.254.169.254/... 等内网/元数据地址绕过单次预检；
+    因此这里 allow_redirects=False，把每一跳的目标重新校验后才手动跟随，
+    并限制最大跳数。返回最终响应；任一跳不安全则返回 None。
+    """
+    current = url
+    for _ in range(MAX_REMOTE_REDIRECTS + 1):
+        # 对每个将要实际请求的 URL 做内网/环回/链路本地/元数据校验
+        if not is_safe_url(current):
+            logger.warning(f"[upload] blocked unsafe remote url: {current[:80]}")
+            return None
+        resp = await http.get(current, timeout=30, allow_redirects=False)
+        # 3xx：取 Location，解析为绝对地址后回到循环顶部重新校验再跟随
+        if 300 <= resp.status_code < 400:
+            location = resp.headers.get("location")
+            if not location:
+                logger.warning(f"[upload] redirect without location: {current[:80]}")
+                return None
+            current = resolve_redirect_location(current, location)
+            continue
+        return resp
+    logger.warning(f"[upload] too many redirects: {url[:80]}")
+    return None
 
 
 async def upload_file(http, cookies: dict, base_headers: dict, push_id: str,

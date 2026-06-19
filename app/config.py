@@ -8,7 +8,7 @@ from pydantic import field_validator
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "1.6.18"
+APP_VERSION = "1.6.19"
 
 
 def _generate_api_key() -> str:
@@ -109,8 +109,27 @@ settings = Settings()
 
 
 def _persist_api_key():
+    # 仅当 API_KEY 未由真实环境变量显式提供（即本次为自动生成）时才落盘，
+    # 避免覆盖运维通过 env 注入的固定 key。
+    import os
+    if os.environ.get("API_KEY", "").strip():
+        return
+
     env_path = Path(".env")
     if not env_path.exists():
+        # 无 .env 时此前直接 return，导致自动生成的 key 从不持久化，每次重启都换新 key，
+        # 静默失效所有客户端凭据（修复 #33）。这里创建 .env 并写入，使其跨重启存活。
+        try:
+            env_path.write_text(f"API_KEY={settings.api_key}\n")
+            logger.info(
+                f"API Key generated and saved to new .env: {mask_secret(settings.api_key)}"
+            )
+        except Exception as e:
+            # 只读文件系统等无法落盘时给出醒目告警，避免运维难以排查的"每次重启换 key"。
+            logger.warning(
+                f"API Key generated but could NOT be persisted (.env unwritable: {e}); "
+                f"它会在重启后重新生成。请显式设置 API_KEY 环境变量。"
+            )
         return
     content = env_path.read_text()
     if "API_KEY=" in content:
