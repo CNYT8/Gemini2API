@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Docker-20.10+-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/Chrome%20%7C%20Edge-Latest-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Browser">
   <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/version-v1.6.19-success?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-v1.6.20-success?style=flat-square" alt="Version">
 </p>
 
 <p>
@@ -59,6 +59,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-06-19 22:40:00 | v1.6.20 - 🐳 修复 v1.6.19 非 root 镜像的升级回归：历史部署 `docker compose pull` 后因 ./data 属主非容器用户导致 PermissionError 启动崩溃。改为入口脚本以 root 启动→修复 data/api 卷属主→gosu 降权到非 root（uid 1000）运行，既保持非 root 加固又让 `docker compose pull && up -d` 无缝升级，无需手动 chown |
 | 2026-06-19 22:00:00 | v1.6.19 - 🔒 安全与质量强化批次：修复 6 处管理面板 XSS、2 处 SSRF（附件重定向绕过/转发 base_url 未校验）、设置写坏 .env 的永久 DoS、conversation_id 路径穿越；🔧 流式生图占位 URL 泄漏/转发 SSE 缺分隔符与 [DONE]、usage-stats 关闭时 500、accounts.json 原子写、账号 ID 冲突等多项；⚙️ 让 MODEL_WHITELIST/JITTER_ENABLED/VERSION_SYNC_INTERVAL 等配置真正生效；📄 文档/配置全面对齐 + 新增漂移测试；🐳 镜像非 root + CI 门禁可失败。全程零回归（63 测试 + ruff + 对抗复核通过）|
 | 2026-06-19 14:15:00 | v1.6.18 - 🔧 修复 gemini-pro 生图 network error：生图意图 Google POST 超时 60s→180s（pro 常 >60s）；SSE keepalive 10s + 切片阶段 ping + 生图结果 delay=0。零回归（62 测试通过）|
 | 2026-06-19 13:30:00 | v1.6.17 - 🔧 修复 playground 生图 network error：SSE 首帧 + 15s 心跳保活，解决 buffered 生图零字节导致 Cloudflare/nginx 超时；图片下载默认 =s2048/25s 超时/=s512 降级/失败占位。🎨 Playground 生图等待态 UX + 5 语 i18n 友好错误提示。零回归（52 测试通过）|

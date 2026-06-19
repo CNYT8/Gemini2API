@@ -59,6 +59,7 @@
 
 | 日期 | 更新內容 |
 |------|----------|
+| 2026-06-19 22:40:00 | v1.6.20 - 🐳 修復 v1.6.19 非 root 鏡像的升級回歸：既有部署因 ./data 屬主非容器使用者，`docker compose pull` 後非 root 程序寫入觸發 PermissionError → 啟動崩潰迴圈。改為入口腳本以 root 啟動→修復 data/api 卷屬主→gosu 降權到非 root（uid 1000）執行，既保持非 root 強化又讓 `docker compose pull && up -d` 無縫升級，無需手動 chown |
 | 2026-06-19 22:00:00 | v1.6.19 - 🔒 安全與品質強化批次：修復 6 處管理面板 XSS、2 處 SSRF（附件重新導向繞過/轉發 base_url 未校驗）、設定寫壞 .env 的永久 DoS、conversation_id 路徑穿越；🔧 串流生圖佔位 URL 洩漏/轉發 SSE 缺分隔符與 [DONE]、usage-stats 關閉時 500、accounts.json 原子寫、帳號 ID 衝突等多項；⚙️ 讓 MODEL_WHITELIST/JITTER_ENABLED/VERSION_SYNC_INTERVAL 等設定真正生效；📄 文件/設定全面對齊 + 新增漂移測試；🐳 鏡像非 root + CI 關卡可失敗。全程零回歸（63 測試 + ruff + 對抗複核通過）|
 | 2026-06-19 14:15:00 | v1.6.18 - 🔧 修復 gemini-pro 生圖 network error：生圖 POST 超時 60s→180s；SSE keepalive 10s + 切片 ping。零回歸（62 測試通過）|
 | 2026-06-19 13:30:00 | v1.6.17 - 🔧 修復 playground 生圖 network error：SSE 首幀 + 15s 心跳保活；圖片下載 =s2048/25s/=s512 降級/失敗占位。🎨 生圖等待態 UX + 5 語 i18n。零回歸（52 測試通過）|

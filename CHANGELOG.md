@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [1.6.20] - 2026-06-19
+
+### Fixed
+- 🐳 **修复 v1.6.19 非 root 镜像导致的升级回归**：v1.6.19 把镜像改为非 root（`USER appuser`）运行，但既有部署 bind 挂载的 `./data` 是旧 root 容器创建的（属主非容器用户），`docker compose pull && docker compose up -d` 后非 root 进程写 `data/cookies` 等触发 `PermissionError: [Errno 13]` → `Application startup failed` 崩溃重启循环。
+  - 改为 **入口脚本（`docker-entrypoint.sh`）以 root 启动 → `chown` 修复 `/app/data`、`/app/api` 卷属主 → `gosu` 降权到非 root 的 `appuser` 运行**。既保持非 root 加固，又让历史部署 `docker compose pull` **无缝升级、无需手动 chown**。
+  - `appuser` uid 改为 **1000**（与常见宿主用户、refresher 的 `pwuser` 对齐），共享 `./data` 属主一致，且升级后文件仍归宿主用户、便于免 sudo 查看。
+  - `docker-compose.yml` 移除 v1.6.19 引入的 `user:` 行（属主与降权改由入口脚本处理），镜像新增 `gosu` 依赖。
+
 ## [1.6.19] - 2026-06-19
 
 ### Security

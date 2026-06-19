@@ -2,9 +2,8 @@ services:
   gemini2api:
     image: ghcr.io/xwteam/gemini2api:latest
     container_name: gemini2api
-    # 以宿主用户身份运行（镜像内默认非 root），保证对 bind 挂载的 ./data 有写权限。
-    # 若宿主 UID/GID 不是 1000，可在 .env 设置 UID/GID 覆盖（不破坏既有部署）。
-    user: "${UID:-1000}:${GID:-1000}"
+    # 镜像以 root 启动后由 docker-entrypoint.sh 修复 ./data、./api 卷属主再降权到非 root
+    # 的 appuser 运行；无需在此指定 user:，历史部署 `docker compose pull` 即可无缝升级。
     env_file:
       - .env
     environment:
