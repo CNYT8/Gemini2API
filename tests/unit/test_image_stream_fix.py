@@ -32,6 +32,14 @@ def test_image_download_uses_s2048_and_short_timeout():
     assert '"fallback": True' in src
 
 
+def test_image_generate_uses_extended_post_timeout():
+    """pro 生图常 >60s：生图意图须用更长 POST 超时，避免 flash 正常而 pro 断连。"""
+    src = (_REPO_ROOT / "app" / "core" / "gemini_client.py").read_text(encoding="utf-8")
+    assert "_GENERATE_TIMEOUT_IMAGE" in src
+    assert "_GENERATE_TIMEOUT_IMAGE" in src and "maybe_image_generation_intent" in src
+    assert "timeout=gen_timeout" in src
+
+
 def test_images_md_handles_download_fallback():
     """seq=12/s2: download failure must not silently drop images."""
     src = (_REPO_ROOT / "app" / "routers" / "openai.py").read_text(encoding="utf-8")

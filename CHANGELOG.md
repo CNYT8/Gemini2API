@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+## [1.6.18] - 2026-06-19
+
+### Fixed
+- 🔧 **gemini-pro 生图仍报 network error**：v1.6.17 的 SSE 心跳已解决 flash 路径，但 `gemini-pro` 生图常需 **>60s**，Google POST 仍用 60s 默认超时导致服务端断连。修复：生图意图 POST 超时延长至 **180s**（普通对话仍 60s）；SSE keepalive 间隔 15s→**10s**；内容切片阶段也发 ping；生图结果切片 **delay=0** 更快收尾。
+
 ## [1.6.17] - 2026-06-19
 
 ### Fixed

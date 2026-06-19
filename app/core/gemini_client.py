@@ -17,11 +17,14 @@ from app.core.fingerprint.header_builder import header_builder
 from app.core.fingerprint.cookie_jar import PersistentCookieJar
 from app.core.fingerprint.jitter import apply_jitter, random_delay_factor
 from app.core.usage_metrics import live_metrics
+from app.utils.tools import maybe_image_generation_intent
 
 logger = logging.getLogger(__name__)
 
 _IMAGE_DOWNLOAD_TIMEOUT = 25  # 单次 GET 超时（秒），避免 =s0 全分辨率拖垮整条链路
 _IMAGE_SIZE_DEFAULT = "=s2048"  # 2048px 边长足够预览，字节/耗时远小于 =s0
+_GENERATE_TIMEOUT_DEFAULT = 60  # 普通对话 POST 超时
+_GENERATE_TIMEOUT_IMAGE = 180  # 生图 POST 超时（pro 常 >60s，flash 通常 <60s）
 
 
 class HTTPStatusError(Exception):
@@ -1098,7 +1101,14 @@ class GeminiWebClient:
         if model_headers:
             headers.update(model_headers)
 
-        resp = await self._http.post(GENERATE_URL, data=form_data, cookies=cookies, headers=headers)
+        gen_timeout = (
+            _GENERATE_TIMEOUT_IMAGE if maybe_image_generation_intent(prompt)
+            else _GENERATE_TIMEOUT_DEFAULT
+        )
+        resp = await self._http.post(
+            GENERATE_URL, data=form_data, cookies=cookies, headers=headers,
+            timeout=gen_timeout,
+        )
         self._cookie_jar.update_from_response(resp)
 
         if resp.status_code >= 400:

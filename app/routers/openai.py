@@ -49,7 +49,7 @@ def _images_md_from_base(images: list, base: str) -> str:
     return "\n".join(lines)
 
 
-_SSE_KEEPALIVE_INTERVAL = 15.0  # 刷新前置代理 idle/read 计时器（Cloudflare 免费版 ~100s 硬上限）
+_SSE_KEEPALIVE_INTERVAL = 10.0  # 刷新前置代理 idle/read 计时器（pro 生图链路更长，缩短间隔）
 
 
 async def _sse_keepalive_during(task: asyncio.Task, interval: float = _SSE_KEEPALIVE_INTERVAL):
@@ -59,6 +59,27 @@ async def _sse_keepalive_during(task: asyncio.Task, interval: float = _SSE_KEEPA
             await asyncio.wait_for(asyncio.shield(task), timeout=interval)
         except asyncio.TimeoutError:
             yield ": ping\n\n"
+
+
+async def _sse_stream_chunks(text: str, completion_id: str, model_name: str, *, fast: bool = False):
+    """伪流式切片输出，切片间隔期间也发 keepalive ping。"""
+    chunk_delay = 0.0 if fast else 0.03
+    chunk_iter = split_into_chunks(text, delay=chunk_delay).__aiter__()
+    while True:
+        try:
+            word = await asyncio.wait_for(
+                chunk_iter.__anext__(), timeout=_SSE_KEEPALIVE_INTERVAL,
+            )
+        except asyncio.TimeoutError:
+            yield ": ping\n\n"
+            continue
+        except StopAsyncIteration:
+            break
+        chunk = StreamChunk(
+            id=completion_id, model=model_name,
+            choices=[StreamChoice(delta=StreamDelta(content=word))],
+        )
+        yield format_sse(chunk.model_dump())
 
 
 def _images_to_markdown(images: list, request) -> str:
@@ -402,12 +423,10 @@ async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, ge
             return
         text = parsed.get("content", text)
 
-    async for word in split_into_chunks(text):
-        chunk = StreamChunk(
-            id=completion_id, model=model_name,
-            choices=[StreamChoice(delta=StreamDelta(content=word))],
-        )
-        yield format_sse(chunk.model_dump())
+    async for sse in _sse_stream_chunks(
+        text, completion_id, model_name, fast=bool(gen_images),
+    ):
+        yield sse
 
     done_chunk = StreamChunk(
         id=completion_id, model=model_name,
