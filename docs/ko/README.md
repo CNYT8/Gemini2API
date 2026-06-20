@@ -58,6 +58,7 @@
 
 | 날짜 | 업데이트 내용 |
 |------|----------|
+| 2026-06-21 00:33:02 | v1.6.21 - 🔀 Gemini → 타사 자동 폴백 체인: 임의의 Gemini 모델(flash/pro/thinking)이 오류를 내거나 빈 응답을 반환하면 API Key 풀의 타사 모델로 자동 전환하여 네이티브 재시도, 클라이언트는 무감각하며 단일 모델 이름 유지; 후보는 풀에서 자동 선택하고 이름으로 비채팅 모델(image/video/audio/embedding 등) 제외, 무작위 로테이션으로 실패(오류/빈 응답) 시 다음으로 전환, 비스트리밍으로 검증(오류·빈 응답을 성공으로 오인 안 함)·스트리밍은 SSE(네이티브 도구 호출 포함)로 변환; `FALLBACK_ENABLED` 기본 꺼짐, `FALLBACK_MODELS` 선택적 지정, 무회귀 |
 | 2026-06-19 22:40:00 | v1.6.20 - 🐳 v1.6.19 비루트 이미지 업그레이드 회귀 수정: 기존 배포는 root 소유 `./data`를 비루트 프로세스가 쓰지 못해 `docker compose pull` 후 `PermissionError` → 시작 크래시 루프. 이미지가 엔트리포인트로 root 시작 → data/api 볼륨 `chown` → `gosu`로 비루트(uid 1000) 강등하도록 변경해, 비루트 강화를 유지하면서 `docker compose pull && up -d`를 매끄럽게(수동 chown 불필요). |
 | 2026-06-19 22:00:00 | v1.6.19 - 🔒 보안·품질 강화 배치: 관리 패널 XSS 6건, SSRF 2건(첨부 다운로드 리다이렉트로 169.254/내부망 우회·전달 base_url 미검증), 설정이 .env를 망가뜨려 발생하던 영구 DoS, conversation_id 경로 순회 수정; 🔧 진짜 스트리밍 이미지 생성의 플레이스홀더 URL 누출/전달 SSE 구분자·[DONE] 누락, usage-stats 비활성 시 500, accounts.json 원자적 쓰기, 계정 ID 충돌 등 다수 수정; ⚙️ MODEL_WHITELIST/JITTER_ENABLED/VERSION_SYNC_INTERVAL 등 설정이 실제로 적용되도록 함; 📄 문서/설정 전면 정합 + 드리프트 테스트 추가; 🐳 비-root 이미지 + CI 게이트 차단형. 전 과정 무회귀(63 테스트 + ruff + 대항 복심 통과) |
 | 2026-06-19 14:15:00 | v1.6.18 - 🔧 gemini-pro 이미지 생성 network error 수정: 이미지 POST 타임아웃 60s→180s; SSE keepalive 10s + 청크 ping. 무회귀(62 테스트 통과) |

@@ -58,6 +58,7 @@
 
 | 日付 | 更新内容 |
 |------|----------|
+| 2026-06-21 00:33:02 | v1.6.21 - 🔀 Gemini → 第三者自動フォールバックチェーン：任意の Gemini モデル（flash/pro/thinking）がエラーまたは空レスポンスを返した場合、API キープール内の第三者モデルに自動で切り替えてネイティブにリトライ、クライアントは無感知で単一モデル名のまま；候補はプールから自動取得し名前で非チャットモデル（image/video/audio/embedding 等）を除外、ランダムにローテーションして失敗（エラー/空）したら次へ、非ストリーミングで検証（エラーも空も成功と誤認しない）・ストリーミングは SSE（ネイティブツール呼び出し含む）に変換；`FALLBACK_ENABLED` 既定無効、`FALLBACK_MODELS` で精密指定可、後方互換 |
 | 2026-06-19 22:40:00 | v1.6.20 - 🐳 v1.6.19 の非 root イメージ升级回帰を修正：既存デプロイは root 所有の `./data` を非 root プロセスが書けず `docker compose pull` 後に `PermissionError` → 起動クラッシュループに。イメージはエントリポイントで root 起動 → data/api ボリュームを `chown` → `gosu` で非 root（uid 1000）に降格するようにし、非 root 強化を保ちつつ `docker compose pull && up -d` をシームレスに（手動 chown 不要）。|
 | 2026-06-19 22:00:00 | v1.6.19 - 🔒 セキュリティと品質強化バッチ：管理パネルの XSS 6 件、SSRF 2 件（添付ダウンロードのリダイレクト迂回 / 転送 base_url 未検証）、設定が .env を壊す永続的 DoS、conversation_id のパストラバーサルを修正；🔧 真ストリーミング生図のプレースホルダ URL 漏洩 / 転送 SSE のセパレータ・[DONE] 欠落、usage-stats 無効時の 500、accounts.json アトミック書き込み、アカウント ID 衝突など多数；⚙️ MODEL_WHITELIST/JITTER_ENABLED/VERSION_SYNC_INTERVAL などの設定を実際に有効化；📄 ドキュメント/設定を全面整合 + ドリフトテスト追加；🐳 非 root イメージ + CI ゲートをブロッキング化。全工程で回帰ゼロ（63 テスト + ruff + 対抗的再確認 合格）|
 | 2026-06-19 14:15:00 | v1.6.18 - 🔧 gemini-pro 画像生成 network error 修正：画像 POST タイムアウト 60s→180s；SSE keepalive 10s + チャンク ping。回帰ゼロ（62 テスト合格）|
