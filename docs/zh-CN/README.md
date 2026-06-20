@@ -140,6 +140,7 @@
 - OpenAI 兼容格式直接转发（含流式），Anthropic 格式双向转换
 - `/openai/v1/models` 自动聚合 Gemini Web 模型 + API Key 池中的第三方模型
 - 一个接口、一个 Key 调用所有大模型
+- 第三方自动兜底（`FALLBACK_ENABLED`，默认关）：任意 Gemini 模型报错/返回空响应时，自动改用 API Key 池中的第三方模型原生重试，客户端无感、仍只用一个模型名；默认自动选用池中所有"适合聊天"的第三方（排除 image/video 等非聊天模型）、随机轮询、失败换下一个，`FALLBACK_MODELS` 可选精确指定
 
 ### ⚡ 高性能架构
 
@@ -498,6 +499,8 @@ response = client.chat.completions.create(
 | `CORS_ALLOW_CREDENTIALS` | ❌ | `true` | CORS 是否允许携带凭据 |
 | `IMAGE_DOWNLOAD_SIZE_SUFFIX` | ❌ | `=s2048` | 生图代下载尺寸后缀（`=s0` 为全分辨率原图） |
 | `IMAGE_DOWNLOAD_TIMEOUT` | ❌ | `25.0` | 单次图片下载 HTTP 超时（秒） |
+| `FALLBACK_ENABLED` | ❌ | `false` | 启用 Gemini→第三方兜底：任意 Gemini 模型（flash/pro/thinking）报错或返回空响应时，自动改用 API Key 池中的第三方模型原生重试 |
+| `FALLBACK_MODELS` | ❌ | — | 兜底模型（逗号分隔、按序尝试）；留空=自动选用池中所有"适合聊天"的第三方（按名称排除 image/video/audio/embedding 等非聊天模型）并随机轮询、一个失败（报错/空）就换下一个 |
 
 ---
 

@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     image_download_size_suffix: str = "=s2048"
     # 单次图片下载 HTTP 超时（秒），独立于主 session 的 60s 默认值。
     image_download_timeout: float = 25.0
+    # Gemini→第三方 兜底链（默认关闭，零回归）。开启后：任意 Gemini 模型（flash/pro/thinking）
+    # 请求报错或返回空响应时，自动改用 API Key 池中的第三方模型原生重试，客户端无感、仍只用一个模型名。
+    # 选择策略：默认自动取池中所有“适合聊天”的第三方（排除 image/video/audio/embedding 等非聊天模型），
+    # 随机轮询、一个失败换下一个。FALLBACK_MODELS 为可选的精确指定（逗号分隔、按序尝试）；留空即自动。
+    fallback_enabled: bool = False
+    fallback_models: str = ""
 
     @field_validator("gemini_psid")
     @classmethod

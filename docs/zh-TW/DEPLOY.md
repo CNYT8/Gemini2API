@@ -333,6 +333,8 @@ kill -9 <PID>
 | `CORS_ALLOW_CREDENTIALS` | true | CORS 是否允許攜帶憑據 |
 | `IMAGE_DOWNLOAD_SIZE_SUFFIX` | =s2048 | 生圖代下載尺寸後綴（`=s0` 為全解析度原圖） |
 | `IMAGE_DOWNLOAD_TIMEOUT` | 25.0 | 單次圖片下載 HTTP 超時（秒） |
+| `FALLBACK_ENABLED` | false | 啟用 Gemini→第三方兜底：任意 Gemini 模型（flash/pro/thinking）報錯或回傳空回應時，自動改用 API Key 池中的第三方模型「原生重試」 |
+| `FALLBACK_MODELS` | — | 兜底模型（逗號分隔、按序嘗試）；留空＝自動選用池中所有「適合聊天」的第三方（按名稱排除 image/video/audio/embedding 等非聊天模型）並隨機輪詢、一個失敗（報錯/空）就換下一個 |
 
 ## Docker Compose 參考
 

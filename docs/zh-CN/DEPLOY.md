@@ -158,6 +158,11 @@ CORS_ALLOW_CREDENTIALS=true
 # 可选：生图代下载尺寸后缀（=s0 为全分辨率原图）与单次下载超时（秒）
 IMAGE_DOWNLOAD_SIZE_SUFFIX==s2048
 IMAGE_DOWNLOAD_TIMEOUT=25.0
+
+# 可选：启用 Gemini→第三方兜底（任意 Gemini 模型报错或返回空响应时，自动改用 API Key 池中的第三方模型原生重试）
+FALLBACK_ENABLED=false
+# 可选：兜底模型（逗号分隔、按序尝试）；留空=自动选用池中所有"适合聊天"的第三方（排除 image/video/audio/embedding 等非聊天模型）并随机轮询、失败换下一个
+FALLBACK_MODELS=
 ```
 
 ### 配置注意事项

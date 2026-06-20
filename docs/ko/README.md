@@ -140,6 +140,7 @@
 - OpenAI 호환 형식 직접 전달(스트리밍 포함), Anthropic 형식 양방향 변환
 - `/openai/v1/models`는 Gemini Web 모델 + API Key 풀의 타사 모델 자동 집계
 - 하나의 인터페이스, 하나의 Key로 모든 대형 모델 호출
+- 타사 자동 폴백(`FALLBACK_ENABLED`, 기본 꺼짐): 임의의 Gemini 모델이 오류를 내거나 빈 응답을 반환하면 API Key 풀의 타사 모델로 자동 전환하여 네이티브 재시도, 클라이언트는 무감각하며 여전히 하나의 모델 이름만 사용; 기본적으로 풀에서 "채팅에 적합한" 모든 타사 모델을 자동 선택(image/video 등 비채팅 모델 제외)하여 무작위 로테이션, 실패 시 다음으로 전환, `FALLBACK_MODELS`로 선택적으로 정확히 지정 가능
 
 ### ⚡ 고성능 아키텍처
 
@@ -379,6 +380,8 @@ print(msg.content[0].text)
 | `CORS_ALLOW_CREDENTIALS` | ❌ | `true` | CORS 자격 증명 전송 허용 여부 |
 | `IMAGE_DOWNLOAD_SIZE_SUFFIX` | ❌ | `=s2048` | 이미지 생성 대리 다운로드 크기 접미사(`=s0`은 전체 해상도 원본) |
 | `IMAGE_DOWNLOAD_TIMEOUT` | ❌ | `25.0` | 단일 이미지 다운로드 HTTP 타임아웃(초) |
+| `FALLBACK_ENABLED` | ❌ | `false` | Gemini→타사 폴백 활성화: 임의의 Gemini 모델(flash/pro/thinking)이 오류를 내거나 빈 응답을 반환하면 API Key 풀의 타사 모델로 자동 전환하여 "네이티브 재시도" |
+| `FALLBACK_MODELS` | ❌ | — | 폴백 모델(쉼표 구분, 순서대로 시도); 비워두면 풀에서 "채팅에 적합한" 모든 타사 모델을 자동 선택(이름으로 image/video/audio/embedding 등 비채팅 모델 제외)하여 무작위 로테이션, 하나가 실패(오류/빈 응답)하면 다음으로 전환 |
 
 ---
 

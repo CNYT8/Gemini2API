@@ -112,6 +112,8 @@ MAX_CONCURRENT_PER_ACCOUNT=8
 | `CORS_ALLOW_CREDENTIALS` | CORS で資格情報の送信を許可するか | true |
 | `IMAGE_DOWNLOAD_SIZE_SUFFIX` | 生図代理ダウンロードのサイズサフィックス（`=s0` でフル解像度） | =s2048 |
 | `IMAGE_DOWNLOAD_TIMEOUT` | 画像ダウンロード 1 回あたりの HTTP タイムアウト（秒） | 25.0 |
+| `FALLBACK_ENABLED` | Gemini → 第三者フォールバックを有効化：任意の Gemini モデル（flash/pro/thinking）がエラーまたは空レスポンスを返した場合、API キープール内の第三者モデルに自動で切り替えて「ネイティブにリトライ」 | false |
+| `FALLBACK_MODELS` | フォールバックモデル（カンマ区切り、順に試行）；空の場合はプール内のすべての「チャットに適した」第三者を自動選択（名前で image/video/audio/embedding などの非チャットモデルを除外）してランダムにローテーション、1 つが失敗（エラー/空）したら次へ切り替え | — |
 
 > **注意**: 値に引用符は不要です。余分なスペースや改行がないことを確認してください。
 

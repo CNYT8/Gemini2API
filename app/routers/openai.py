@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.config import settings
 from app.core.account_pool import account_pool as gemini_client
 from app.core.api_forwarder import forward_to_provider
+from app.core.fallback import fallback_enabled, is_empty_result, get_fallback_entries, openai_data_is_empty
 from app.core.conversation_store import conversation_store
 from app.core.gemini_client import GEMINI_MODELS, MODEL_ALIASES, _resolve_model
 from app.core.stream import split_into_chunks, format_sse
@@ -108,6 +109,100 @@ def _images_to_markdown(images: list, request) -> str:
     return _images_md_from_base(images, _image_base(request))
 
 
+def _json_body(resp) -> dict | None:
+    """把 forward_to_provider 的 JSONResponse body 解析成 dict（失败返回 None）。"""
+    try:
+        body = getattr(resp, "body", None)
+        if body is None:
+            return None
+        if isinstance(body, (bytes, bytearray)):
+            body = body.decode("utf-8", "replace")
+        return json.loads(body)
+    except Exception:
+        return None
+
+
+async def _fallback_result(request, req: ChatRequest, messages_raw: list, exclude_model: str = "") -> dict | None:
+    """Gemini 失败/空响应时的统一兜底：在候选第三方里按序（自动随机/或指定顺序）逐个
+    用【非流式】探测，跳过报错或返回空的候选，直到拿到一个“有内容/有工具调用”的好结果。
+
+    返回 OpenAI 风格响应 dict；未开启 / 无可用候选 / 全部失败时返回 None（调用方维持原有错误返回，零回归）。
+    用非流式探测的好处：能在“真正发给客户端之前”验证候选是否可用，从而真正做到“一个不行换一个”，
+    既不会把报错也不会把空响应当成功（流式直接转发无法回退，故统一走探测）。
+    """
+    if request is None or req is None or not fallback_enabled():
+        return None
+    pool = getattr(request.app.state, "api_key_pool", None)
+    # 强制非流式探测（不改原 req 的 stream 语义）
+    probe_req = req.model_copy(update={"stream": False})
+    for entry in get_fallback_entries(request.app.state, exclude_model=exclude_model):
+        try:
+            resp = await forward_to_provider(entry, messages_raw, probe_req)
+        except Exception as e:  # noqa: BLE001 — 单个候选失败不中断，换下一个
+            logger.warning(f"[fallback] 第三方 {entry.model} 失败: {e}")
+            continue
+        if isinstance(resp, JSONResponse) and getattr(resp, "status_code", 200) >= 400:
+            logger.warning(f"[fallback] 第三方 {entry.model} 返回 {getattr(resp, 'status_code', '?')}，换下一个")
+            continue
+        data = _json_body(resp)
+        if data is None or openai_data_is_empty(data):
+            logger.warning(f"[fallback] 第三方 {entry.model} 返回空/不可解析，换下一个")
+            continue
+        if pool:
+            pool.update_last_used(entry.id)
+        logger.info(f"[fallback] 已由第三方模型 {entry.model} 兜底")
+        return data
+    return None
+
+
+async def _emit_openai_data_sse(data: dict, completion_id: str, model_name: str) -> AsyncGenerator[str, None]:
+    """把第三方非流式 OpenAI 响应 dict 转成 SSE 帧（role 首帧已由调用方发出）。
+    含工具调用则发原生 tool_calls 帧；否则把文本切片伪流式输出。"""
+    message = {}
+    try:
+        message = (data.get("choices") or [{}])[0].get("message") or {}
+    except Exception:
+        message = {}
+    tool_calls = message.get("tool_calls")
+    if tool_calls:
+        for tc in tool_calls:
+            clean_tc = {
+                "id": tc.get("id"),
+                "type": tc.get("type", "function"),
+                "function": tc.get("function", {}),
+            }
+            chunk = StreamChunk(
+                id=completion_id, model=model_name,
+                choices=[StreamChoice(delta=StreamDelta(tool_calls=[clean_tc]))],
+            )
+            yield format_sse(chunk.model_dump())
+        final = StreamChunk(
+            id=completion_id, model=model_name,
+            choices=[StreamChoice(delta=StreamDelta(), finish_reason="tool_calls")],
+        )
+        yield format_sse(final.model_dump())
+        yield "data: [DONE]\n\n"
+        return
+    text = message.get("content") or ""
+    async for sse in _sse_stream_chunks(text, completion_id, model_name, fast=True):
+        yield sse
+    done = StreamChunk(
+        id=completion_id, model=model_name,
+        choices=[StreamChoice(delta=StreamDelta(), finish_reason="stop")],
+    )
+    yield format_sse(done.model_dump())
+    yield "data: [DONE]\n\n"
+
+
+async def _maybe_fallback_stream(request, req: ChatRequest, messages_raw: list, exclude_model: str, completion_id: str, model_name: str) -> AsyncGenerator[str, None]:
+    """流式路径的兜底：探到好结果就转成 SSE 发出；没有则不产出任何 chunk。"""
+    data = await _fallback_result(request, req, messages_raw, exclude_model)
+    if data is None:
+        return
+    async for sse in _emit_openai_data_sse(data, completion_id, model_name):
+        yield sse
+
+
 @router.get("/models")
 async def list_models(request: Request):
     models = list(gemini_client.models)
@@ -179,7 +274,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model, attachments, _image_base(request)),
+            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model, attachments, _image_base(request), request, req),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -197,15 +292,27 @@ async def chat_completions(req: ChatRequest, request: Request):
                 result = await gemini_client.generate(prompt, resolved_model)
                 gemini_conv_id = ""
             except Exception:
+                fb = await _fallback_result(request, req, messages_raw, resolved_model)
+                if fb is not None:
+                    return JSONResponse(content=fb)
                 return JSONResponse(
                     status_code=500,
                     content={"error": {"message": str(e), "type": "api_error"}},
                 )
         else:
+            fb = await _fallback_result(request, req, messages_raw, resolved_model)
+            if fb is not None:
+                return JSONResponse(content=fb)
             return JSONResponse(
                 status_code=500 if "retry" in str(e).lower() else 400,
                 content={"error": {"message": str(e), "type": "api_error"}},
             )
+
+    # Gemini 返回空响应（无文本、无图）→ 第三方兜底（开关关闭/无候选时返回 None，零回归）
+    if is_empty_result(result):
+        fb = await _fallback_result(request, req, messages_raw, resolved_model)
+        if fb is not None:
+            return JSONResponse(content=fb)
 
     text = result.get("text", "")
     # AI 生成图片：图片在前，紧跟文字描述（单换行，不留多余空行）
@@ -275,7 +382,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     )
 
 
-async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "", attachments=None, base_url: str = "") -> AsyncGenerator[str, None]:
+async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "", attachments=None, base_url: str = "", request=None, req=None) -> AsyncGenerator[str, None]:
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     model_name = display_model or model
 
@@ -285,7 +392,7 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     if has_tools or attachments or maybe_image_generation_intent(prompt):
         async for sse in _stream_response_buffered(
             prompt, model, has_tools, gemini_conv_id, conv, messages_raw,
-            model_name, completion_id, attachments, base_url
+            model_name, completion_id, attachments, base_url, request, req
         ):
             yield sse
         return
@@ -341,10 +448,34 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
                 new_conv_id = result.get("conversation_id", "")
                 final_images = result.get("images") or []
             except Exception as e2:
+                # 尚未流出任何内容（只发过 role 首帧）→ 可安全改用第三方兜底（流式）
+                if not streamed_any:
+                    emitted = False
+                    async for chunk in _maybe_fallback_stream(request, req, messages_raw, model, completion_id, model_name):
+                        emitted = True
+                        yield chunk
+                    if emitted:
+                        return
                 yield _err_chunk(completion_id, model_name, str(e2))
                 return
         else:
+            if not streamed_any:
+                emitted = False
+                async for chunk in _maybe_fallback_stream(request, req, messages_raw, model, completion_id, model_name):
+                    emitted = True
+                    yield chunk
+                if emitted:
+                    return
             yield _err_chunk(completion_id, model_name, str(e))
+            return
+
+    # Gemini 真流式整条为空（只发过 role 首帧，未流出任何内容）→ 第三方兜底
+    if not streamed_any and not (full_text or "").strip() and not final_images:
+        emitted = False
+        async for chunk in _maybe_fallback_stream(request, req, messages_raw, model, completion_id, model_name):
+            emitted = True
+            yield chunk
+        if emitted:
             return
 
     # 生图兜底：极少数生图意图未被识别而走了真流式（文字已先流出，无法把图收回到最前）。
@@ -382,7 +513,7 @@ def _err_chunk(completion_id: str, model_name: str, msg: str) -> str:
     return format_sse(chunk.model_dump()) + "data: [DONE]\n\n"
 
 
-async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, model_name: str = "", completion_id: str = "", attachments=None, base_url: str = "") -> AsyncGenerator[str, None]:
+async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, model_name: str = "", completion_id: str = "", attachments=None, base_url: str = "", request=None, req=None) -> AsyncGenerator[str, None]:
     """非流式收集 + 切片伪流式：用于有工具调用/附件、需要完整文本的场景。"""
     # 立即发出首帧 SSE，避免生图/工具路径在 generate() 阻塞期间零字节导致前置代理超时。
     first = StreamChunk(
@@ -411,10 +542,31 @@ async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, ge
             try:
                 result = retry_task.result()
             except Exception as e2:
+                emitted = False
+                async for chunk in _maybe_fallback_stream(request, req, messages_raw, model, completion_id, model_name):
+                    emitted = True
+                    yield chunk
+                if emitted:
+                    return
                 yield _err_chunk(completion_id, model_name, str(e2))
                 return
         else:
+            emitted = False
+            async for chunk in _maybe_fallback_stream(request, req, messages_raw, model, completion_id, model_name):
+                emitted = True
+                yield chunk
+            if emitted:
+                return
             yield _err_chunk(completion_id, model_name, str(e))
+            return
+
+    # Gemini 返回空响应（无文本、无图）→ 第三方兜底（此前只发过 role 首帧 + keepalive，可安全改流）
+    if is_empty_result(result):
+        emitted = False
+        async for chunk in _maybe_fallback_stream(request, req, messages_raw, model, completion_id, model_name):
+            emitted = True
+            yield chunk
+        if emitted:
             return
 
     text = result.get("text", "")

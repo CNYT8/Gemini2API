@@ -140,6 +140,7 @@
 - Direct OpenAI-compatible format forwarding (including streaming), bidirectional Anthropic conversion
 - `/openai/v1/models` auto-aggregates Gemini Web models + third-party models from API Key pool
 - Single interface, single key to call all major models
+- Third-party auto-fallback (`FALLBACK_ENABLED`, off by default): when any Gemini model errors or returns an empty response, automatically retry natively with a third-party model from the API Key pool — transparent to the client, still using just one model name; by default automatically uses all "chat-capable" third-party models in the pool (excludes non-chat models such as image/video), random round-robin, switching to the next on failure; `FALLBACK_MODELS` optionally specifies them precisely
 
 ### ⚡ High-Performance Architecture
 
@@ -498,6 +499,8 @@ response = client.chat.completions.create(
 | `CORS_ALLOW_CREDENTIALS` | ❌ | `true` | Whether CORS allows credentials |
 | `IMAGE_DOWNLOAD_SIZE_SUFFIX` | ❌ | `=s2048` | Generated-image download size suffix (`=s0` for full-resolution original) |
 | `IMAGE_DOWNLOAD_TIMEOUT` | ❌ | `25.0` | Per-image download HTTP timeout (seconds) |
+| `FALLBACK_ENABLED` | ❌ | `false` | Enable Gemini → third-party fallback: when any Gemini model (flash/pro/thinking) errors or returns an empty response, automatically retry natively with a third-party model from the API Key pool |
+| `FALLBACK_MODELS` | ❌ | — | Fallback models (comma-separated, tried in order); empty = automatically use all "chat-capable" third-party models in the pool (excludes non-chat models such as image/video/audio/embedding by name) with random round-robin, switching to the next one whenever one fails (errors or empty) |
 
 ---
 
