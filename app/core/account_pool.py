@@ -381,6 +381,36 @@ class AccountPool:
                 out.append({"account_id": account.id, "error": str(e)})
         return out
 
+    def _get_account(self, account_id: str):
+        for a in self._accounts:
+            if a.id == account_id:
+                return a
+        return None
+
+    async def list_gems(self, account_id: str) -> list[dict]:
+        acc = self._get_account(account_id)
+        if not acc or not acc.client:
+            raise ValueError(f"Account {account_id} not found or no client")
+        return await acc.client.list_gems()
+
+    async def create_gem(self, account_id: str, name: str, prompt: str, description: str = "") -> str | None:
+        acc = self._get_account(account_id)
+        if not acc or not acc.client:
+            raise ValueError(f"Account {account_id} not found or no client")
+        return await acc.client.create_gem(name, prompt, description)
+
+    async def update_gem(self, account_id: str, gem_id: str, name: str, prompt: str, description: str = "") -> bool:
+        acc = self._get_account(account_id)
+        if not acc or not acc.client:
+            raise ValueError(f"Account {account_id} not found or no client")
+        return await acc.client.update_gem(gem_id, name, prompt, description)
+
+    async def delete_gem(self, account_id: str, gem_id: str) -> bool:
+        acc = self._get_account(account_id)
+        if not acc or not acc.client:
+            raise ValueError(f"Account {account_id} not found or no client")
+        return await acc.client.delete_gem(gem_id)
+
     def set_strategy(self, strategy: str):
         self._strategy = RotationStrategy(strategy)
 
@@ -424,10 +454,16 @@ class AccountPool:
         }
 
     async def generate(self, prompt: str, model: str, conversation_id: str = "",
-                       attachments: list | None = None) -> dict:
+                       attachments: list | None = None, gem_id: str | None = None,
+                       account_id: str | None = None) -> dict:
         # failover：某账号被可重试错误（5xx/未就绪/401·403）打回时，换下一个 active 账号重试，
         # 直到成功或无更多账号可试。5xx 限流账号进入冷却，401/403 标 expired。
         tried: set = set()
+        # 绑定账号：排除其他所有账号，使 acquire/failover 只可能选中目标账号
+        if account_id:
+            if self._get_account(account_id) is None:
+                raise ValueError(f"Account {account_id} not found")
+            tried.update({a.id for a in self._accounts if a.id != account_id})
         last_err = None
         while True:
             try:
@@ -440,7 +476,7 @@ class AccountPool:
             t0 = time.time()
             released = False
             try:
-                result = await account.client.generate(prompt, model, conversation_id, attachments)
+                result = await account.client.generate(prompt, model, conversation_id, attachments, gem_id)
                 live_metrics.record_request(model, (time.time() - t0) * 1000)
                 await self.release(account, success=True)
                 released = True
@@ -466,7 +502,8 @@ class AccountPool:
                     await self.release(account, success=False)
 
     async def generate_stream(self, prompt: str, model: str, conversation_id: str = "",
-                              attachments: list | None = None):
+                              attachments: list | None = None, gem_id: str | None = None,
+                              account_id: str | None = None):
         """真流式：持有账号槽位直到整个流结束，再 release。
         逐块产出 {"type":"delta","text":增量} ，最后产出 {"type":"final", ...}（含会话ID/图片）。
 
@@ -474,6 +511,11 @@ class AccountPool:
         （已经吐出部分内容后再换账号会导致重复，故此时只能终止）。
         """
         tried: set = set()
+        # 绑定账号：排除其他所有账号，使 acquire/failover 只可能选中目标账号
+        if account_id:
+            if self._get_account(account_id) is None:
+                raise ValueError(f"Account {account_id} not found")
+            tried.update({a.id for a in self._accounts if a.id != account_id})
         last_err = None
         while True:
             try:
@@ -487,7 +529,7 @@ class AccountPool:
             failover = False
             released = False
             try:
-                async for evt in account.client.generate_stream(prompt, model, conversation_id, attachments):
+                async for evt in account.client.generate_stream(prompt, model, conversation_id, attachments, gem_id):
                     emitted_any = True
                     yield evt
                 live_metrics.record_request(model, (time.time() - t0) * 1000)
