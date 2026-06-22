@@ -65,14 +65,16 @@ async def update_gem(gem_id: str, req: UpdateGemRequest):
 
 
 @router.delete("/gems/{gem_id}")
-async def delete_gem(gem_id: str, account_id: str):
+async def delete_gem(gem_id: str, account_id: str, request: Request):
     try:
         ok = await account_pool.delete_gem(account_id, gem_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     if not ok:
         raise HTTPException(status_code=502, detail="delete failed at Gemini")
-    return {"success": True}
+    # 联动清理：删掉所有指向该 gem 的模型映射，避免留下打到失效 gem 的死模型
+    removed = request.app.state.gem_mapping.delete_by_gem(gem_id, account_id)
+    return {"success": True, "removed_mappings": removed}
 
 
 @router.get("/gem-mapping")

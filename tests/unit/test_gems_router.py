@@ -21,6 +21,34 @@ def test_gem_mapping_crud(gem_client):
     assert "my-gem" not in r.json()["mappings"]
 
 
+def test_delete_gem_cascades_into_gem_mapping(gem_client, monkeypatch):
+    import app.routers.gems as gems_mod
+
+    async def fake_delete(account_id, gem_id):
+        assert account_id == "account-0"
+        assert gem_id == "g1"
+        return True
+
+    monkeypatch.setattr(gems_mod.account_pool, "delete_gem", fake_delete)
+
+    # 先暴露一条指向该 gem 的模型映射
+    r = gem_client.post("/admin/gem-mapping", json={
+        "model_name": "doomed-gem", "gem_id": "g1",
+        "base_model": "gemini-pro", "account_id": "account-0",
+    }, headers=_AUTH)
+    assert r.status_code == 200
+    assert "doomed-gem" in r.json()["mappings"]
+
+    # 删除该 gem，应联动清掉映射
+    r = gem_client.delete("/admin/gems/g1?account_id=account-0", headers=_AUTH)
+    assert r.status_code == 200
+    assert "doomed-gem" in r.json().get("removed_mappings", [])
+
+    # /admin/gem-mapping 不再列出该死模型
+    r = gem_client.get("/admin/gem-mapping", headers=_AUTH)
+    assert "doomed-gem" not in r.json()["mappings"]
+
+
 def test_list_gems_proxies_account_pool(gem_client, monkeypatch):
     import app.routers.gems as gems_mod
 

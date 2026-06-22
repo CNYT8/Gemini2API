@@ -42,7 +42,7 @@ class GemMapping:
 
     def set(self, name: str, info: dict) -> None:
         self.mappings[name] = {
-            "gem_id": info["gem_id"],
+            "gem_id": info.get("gem_id", ""),
             "base_model": info.get("base_model", "gemini-pro"),
             "account_id": info.get("account_id", ""),
         }
@@ -54,6 +54,19 @@ class GemMapping:
             self._save()
             return True
         return False
+
+    def delete_by_gem(self, gem_id: str, account_id: str) -> list[str]:
+        """删除所有指向同一个 (gem_id, account_id) 的模型映射，落盘，返回被删的模型名列表。
+        用于删 Gem 时联动清理：避免留下指向失效 gem 的死模型。"""
+        removed = [
+            name for name, info in self.mappings.items()
+            if info.get("gem_id") == gem_id and info.get("account_id") == account_id
+        ]
+        for name in removed:
+            del self.mappings[name]
+        if removed:
+            self._save()
+        return removed
 
     def resolve(self, name: str) -> dict | None:
         v = self.mappings.get(name)

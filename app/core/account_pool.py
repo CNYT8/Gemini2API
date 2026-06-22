@@ -472,6 +472,12 @@ class AccountPool:
                 # 没有（更多）账号可用：抛出最后一次可重试错误（若有），否则抛 acquire 的错
                 if last_err is not None:
                     raise last_err
+                # 锁定账号场景：其它账号已被全部 exclude，acquire 报「无更多账号可故障切换」
+                # 其实是绑定账号本身不可用（expired/busy/cooldown），换更准确的文案。
+                if account_id:
+                    raise RuntimeError(
+                        f"Pinned gem account '{account_id}' unavailable (expired/busy/cooldown)"
+                    )
                 raise
             t0 = time.time()
             released = False
@@ -523,6 +529,11 @@ class AccountPool:
             except RuntimeError:
                 if last_err is not None:
                     raise last_err
+                # 锁定账号场景：其它账号已被全部 exclude，真实原因是绑定账号本身不可用
+                if account_id:
+                    raise RuntimeError(
+                        f"Pinned gem account '{account_id}' unavailable (expired/busy/cooldown)"
+                    )
                 raise
             t0 = time.time()
             emitted_any = False
