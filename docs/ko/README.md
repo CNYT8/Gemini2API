@@ -424,6 +424,7 @@ print(msg.content[0].text)
 - [x] 대화 컨텍스트 지속성
 - [ ] 이미지/파일 업로드 지원
 - [x] 웹 측 누적 세션 자동 정리(오래된 세션 정기 삭제, 고정 세션 보존)
+- [x] [issues #2](https://github.com/xwteam/gemini2api/issues/2) 사용자 지정 Gemini Gem 지원(패널 목록/생성/수정/삭제 + 모델 이름으로 노출)
 
 ---
 

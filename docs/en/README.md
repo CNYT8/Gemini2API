@@ -540,6 +540,7 @@ response = client.chat.completions.create(
 - [x] Model mapping (alias → actual model)
 - [x] Auto-cleanup of accumulated web sessions (periodically delete old sessions, keep pinned)
 - [ ] Image/file upload support
+- [x] [issues #2](https://github.com/xwteam/gemini2api/issues/2) Custom Gemini Gem support (panel list / create / update / delete + expose as a model name)
 
 ---
 

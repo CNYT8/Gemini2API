@@ -540,6 +540,7 @@ response = client.chat.completions.create(
 - [x] 模型映射（别名→实际模型名）
 - [x] 自动清理网页端堆积会话（定时删除旧会话，置顶保留）
 - [ ] 图片/文件上传支持
+- [x] [issues #2](https://github.com/xwteam/gemini2api/issues/2) 自定义 Gemini Gem 支持（管理面板列出/新建/改/删 + 暴露为模型名调用）
 
 ---
 

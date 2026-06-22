@@ -540,6 +540,7 @@ response = client.chat.completions.create(
 - [x] モデルマッピング（エイリアス → 実際のモデル）
 - [ ] 画像/ファイルアップロード対応
 - [x] ウェブ側蓄積セッションの自動クリーンアップ（古いセッションを定期削除、ピン留めは保持）
+- [x] [issues #2](https://github.com/xwteam/gemini2api/issues/2) カスタム Gemini Gem 対応（パネルで一覧/作成/編集/削除 + モデル名として公開）
 
 ---
 

@@ -541,6 +541,7 @@ response = client.chat.completions.create(
 - [x] 模型對應（別名→實際模型名）
 - [ ] 圖片/檔案上傳支援
 - [x] 自動清理網頁端堆積會話（定時刪除舊會話，置頂保留）
+- [x] [issues #2](https://github.com/xwteam/gemini2api/issues/2) 自訂 Gemini Gem 支援（管理面板列出/新建/修改/刪除 + 暴露為模型名呼叫）
 
 ---
 

@@ -729,6 +729,7 @@ gemini2api/
 - [x] 图片/文件上传支持
 - [x] AI 生成图片（`/v1/images/generations` + 三家对话接口嵌图）
 - [x] 自动清理 Gemini 网页端堆积会话（定时删旧会话，保留置顶）
+- [x] [issues #2](https://github.com/xwteam/gemini2api/issues/2) 自定义 Gemini Gem 支持（管理面板列出/新建/改/删 + 暴露为模型名调用）
 
 ---
 
