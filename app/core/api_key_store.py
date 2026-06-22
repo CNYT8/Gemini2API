@@ -4,6 +4,7 @@ Thread-safe API key storage pool with JSON persistence.
 
 import json
 import threading
+import time
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -60,6 +61,8 @@ class ApiKeyPool:
         self.file_path = Path(file_path)
         self.lock = threading.Lock()
         self.entries: dict[str, ApiKeyEntry] = {}
+        # entry_id -> 冷却截止的 time.monotonic() 时间戳；仅内存，重启即清空。
+        self._cooldowns: dict[str, float] = {}
         self._load()
 
     def add(
@@ -119,6 +122,30 @@ class ApiKeyPool:
                 if entry.model == model and entry.status == "active":
                     return entry
             return None
+
+    def mark_unhealthy(self, id: str, seconds: float) -> None:
+        """把某第三方条目标记为冷却 `seconds` 秒（自现在起）。seconds<=0 为空操作。"""
+        if seconds <= 0:
+            return
+        with self.lock:
+            self._cooldowns[id] = time.monotonic() + seconds
+
+    def get_entries_for_model(self, model: str) -> list[ApiKeyEntry]:
+        """返回该 model 的全部 active 候选：未冷却在前、冷却中在后，组内保持插入序。
+        冷却是优先级降级而非硬屏蔽——全部冷却时仍返回全部，绝不饿死。"""
+        with self.lock:
+            now = time.monotonic()
+            healthy: list[ApiKeyEntry] = []
+            cooling: list[ApiKeyEntry] = []
+            for entry in self.entries.values():
+                if entry.model != model or entry.status != "active":
+                    continue
+                until = self._cooldowns.get(entry.id)
+                if until is not None and until > now:
+                    cooling.append(entry)
+                else:
+                    healthy.append(entry)
+            return healthy + cooling
 
     def delete(self, id: str) -> bool:
         return self.remove(id)
