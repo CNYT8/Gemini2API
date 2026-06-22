@@ -796,6 +796,37 @@ class GeminiWebClient:
             out.append({"id": gem[0], "name": name, "description": desc, "prompt": prompt})
         return out
 
+    async def create_gem(self, name: str, prompt: str, description: str = "") -> str | None:
+        """新建自定义 Gem（oMH3Zd）。成功返回新 gem id，失败返回 None。"""
+        payload = json.dumps([[
+            name, description, prompt,
+            None, None, None, None, None, 0, None, 1, None, None, None, [],
+        ]])
+        raw = await self._batchexecute("oMH3Zd", payload)
+        body = self._parse_wrb_body(raw, "oMH3Zd")
+        if isinstance(body, list) and body and isinstance(body[0], str):
+            return body[0]
+        return None
+
+    async def update_gem(self, gem_id: str, name: str, prompt: str, description: str = "") -> bool:
+        """修改自定义 Gem（kHv0Vd）。返回 200 即视为成功。"""
+        if not gem_id:
+            return False
+        payload = json.dumps([
+            gem_id,
+            [name, description, prompt,
+             None, None, None, None, None, 0, None, 1, None, None, None, [], 0],
+        ])
+        raw = await self._batchexecute("kHv0Vd", payload)
+        return raw is not None
+
+    async def delete_gem(self, gem_id: str) -> bool:
+        """删除自定义 Gem（UXcSJb）。返回 200 即视为成功。"""
+        if not gem_id:
+            return False
+        raw = await self._batchexecute("UXcSJb", json.dumps([gem_id]))
+        return raw is not None
+
     async def delete_web_chat(self, cid: str) -> bool:
         """删除一个网页端会话（两步 RPC：GzXR5e -> qWymEb，两步都必须执行）。
         cid 是 c_xxx 形式的会话 id。两步都返回 200 视为成功。

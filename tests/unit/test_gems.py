@@ -46,3 +46,57 @@ def test_list_gems_returns_empty_on_failure(monkeypatch):
 
     monkeypatch.setattr(c, "_batchexecute", fake_batch)
     assert asyncio.run(c.list_gems()) == []
+
+
+def test_create_gem_returns_new_id(monkeypatch):
+    c = _make_client()
+    # 新建响应：body[0] 是新 gem id
+    body = ["gem-new-123"]
+
+    captured = {}
+    async def fake_batch(rpc_id, payload_str):
+        captured["rpc"] = rpc_id
+        captured["payload"] = json.loads(payload_str)
+        return _wrb("oMH3Zd", body)
+
+    monkeypatch.setattr(c, "_batchexecute", fake_batch)
+    gid = asyncio.run(c.create_gem("导师", "你是导师", "desc"))
+    assert gid == "gem-new-123"
+    assert captured["rpc"] == "oMH3Zd"
+    # payload 外层是 [[name, desc, prompt, ...]]
+    assert captured["payload"][0][0] == "导师"
+    assert captured["payload"][0][1] == "desc"
+    assert captured["payload"][0][2] == "你是导师"
+
+
+def test_update_gem_true_on_200(monkeypatch):
+    c = _make_client()
+    captured = {}
+    async def fake_batch(rpc_id, payload_str):
+        captured["rpc"] = rpc_id
+        captured["payload"] = json.loads(payload_str)
+        return _wrb("kHv0Vd", [])
+    monkeypatch.setattr(c, "_batchexecute", fake_batch)
+    ok = asyncio.run(c.update_gem("gem-1", "新名", "新提示", "新描述"))
+    assert ok is True
+    assert captured["rpc"] == "kHv0Vd"
+    assert captured["payload"][0] == "gem-1"
+    assert captured["payload"][1][0] == "新名"
+
+
+def test_delete_gem_true_on_200(monkeypatch):
+    c = _make_client()
+    async def fake_batch(rpc_id, payload_str):
+        assert rpc_id == "UXcSJb"
+        assert json.loads(payload_str) == ["gem-x"]
+        return _wrb("UXcSJb", [])
+    monkeypatch.setattr(c, "_batchexecute", fake_batch)
+    assert asyncio.run(c.delete_gem("gem-x")) is True
+
+
+def test_delete_gem_false_on_none(monkeypatch):
+    c = _make_client()
+    async def fake_batch(rpc_id, payload_str):
+        return None
+    monkeypatch.setattr(c, "_batchexecute", fake_batch)
+    assert asyncio.run(c.delete_gem("gem-x")) is False
