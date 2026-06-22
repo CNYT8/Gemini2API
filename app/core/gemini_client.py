@@ -971,21 +971,27 @@ class GeminiWebClient:
                 logger.error(f"Refresh loop error: {e}")
 
     def _encode_payload(self, prompt: str, model: str, conversation_id: str = "",
-                        file_ids: list | None = None) -> str:
+                        file_ids: list | None = None, gem_id: str | None = None) -> str:
         conv_param = conversation_id if conversation_id else None
         if file_ids:
             # 有附件：第 0 位用带文件的 message_content 替换纯 [prompt]
             file_data = [[[fid], fname] for fid, fname in file_ids]
             message_content = [prompt, 0, None, file_data, None, None, 0]
-            inner = json.dumps([message_content, None, conv_param, model])
+            inner_list = [message_content, None, conv_param, model]
         else:
             # 纯文本：保持原结构，逐字节不变（防回归）
-            inner = json.dumps([[prompt], None, conv_param, model])
+            inner_list = [[prompt], None, conv_param, model]
+        if gem_id:
+            # 自定义 gem：内层数组扩展到第 19 格放 gem id（参考库 GEM_FLAG_INDEX=19）
+            if len(inner_list) < 20:
+                inner_list.extend([None] * (20 - len(inner_list)))
+            inner_list[19] = gem_id
+        inner = json.dumps(inner_list)
         outer = json.dumps([None, inner])
         return outer
 
     async def generate(self, prompt: str, model: str, conversation_id: str = "",
-                       attachments: list | None = None) -> dict:
+                       attachments: list | None = None, gem_id: str | None = None) -> dict:
         if not self._healthy:
             # 单账号自愈：抛错前单飞重载一次 Cookie，缓解会话约 2h 到期后的硬失败（Issue#1-C）
             async with self._heal_lock:
@@ -1010,7 +1016,7 @@ class GeminiWebClient:
         max_5xx = max(0, settings.same_account_5xx_retries)
         for attempt in range(settings.max_retries):
             try:
-                return await self._send_request(prompt, model, conversation_id, attachments)
+                return await self._send_request(prompt, model, conversation_id, attachments, gem_id)
             except HTTPStatusError as e:
                 last_err = e
                 status = e.status_code
@@ -1036,7 +1042,7 @@ class GeminiWebClient:
         raise RuntimeError(f"Exhausted {settings.max_retries} retries: {last_err}")
 
     async def generate_stream(self, prompt: str, model: str, conversation_id: str = "",
-                              attachments: list | None = None):
+                              attachments: list | None = None, gem_id: str | None = None):
         """真流式：用独立临时 AsyncSession 流式读 StreamGenerate，逐帧产出文本增量。
 
         产出事件：
@@ -1081,7 +1087,7 @@ class GeminiWebClient:
             if not file_ids:
                 logger.warning("All attachment uploads failed, streaming text-only")
 
-        encoded = self._encode_payload(prompt, resolved, conversation_id, file_ids)
+        encoded = self._encode_payload(prompt, resolved, conversation_id, file_ids, gem_id)
         form_data = {"at": self._session_token, "f.req": encoded}
         headers = self._get_headers("POST", content_type="application/x-www-form-urlencoded")
         model_headers = _build_model_header(resolved)
@@ -1193,7 +1199,7 @@ class GeminiWebClient:
         }
 
     async def _send_request(self, prompt: str, model: str, conversation_id: str = "",
-                           attachments: list | None = None) -> dict:
+                           attachments: list | None = None, gem_id: str | None = None) -> dict:
         await apply_jitter("api_call")
         await self._ensure_session_current()
         self._clear_session_cookies()
@@ -1212,7 +1218,7 @@ class GeminiWebClient:
             if not file_ids:
                 logger.warning("All attachment uploads failed, falling back to text-only")
 
-        encoded = self._encode_payload(prompt, resolved, conversation_id, file_ids)
+        encoded = self._encode_payload(prompt, resolved, conversation_id, file_ids, gem_id)
         form_data = {"at": self._session_token, "f.req": encoded}
         headers = self._get_headers("POST", content_type="application/x-www-form-urlencoded")
 
