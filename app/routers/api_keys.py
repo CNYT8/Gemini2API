@@ -19,6 +19,7 @@ class AddKeyRequest(BaseModel):
     api_key: str
     base_url: Optional[str] = None
     label: Optional[str] = None
+    reasoning_effort: Optional[str] = None
 
 
 class ImportKeysRequest(BaseModel):
@@ -31,6 +32,27 @@ class UpdateStatusRequest(BaseModel):
 
 class UpdateLabelRequest(BaseModel):
     label: str
+
+
+class UpdateReasoningEffortRequest(BaseModel):
+    reasoning_effort: Optional[str] = None
+
+
+def _validate_effort(value: Optional[str]) -> Optional[str]:
+    """自由值,仅基本卫生:strip;空→None;非空须 ≤32、ASCII、可打印、无内嵌空白,否则 400。"""
+    if value is None:
+        return None
+    v = value.strip()
+    # If after stripping it's empty, return None
+    if not v:
+        return None
+    # If value had leading/trailing whitespace OR contains embedded whitespace, reject
+    if v != value or any(c.isspace() for c in v):
+        raise HTTPException(status_code=400, detail="invalid reasoning_effort value")
+    # Check for non-printable, non-ascii, or length
+    if not v.isascii() or not v.isprintable() or len(v) > 32:
+        raise HTTPException(status_code=400, detail="invalid reasoning_effort value")
+    return v
 
 
 class BatchDeleteRequest(BaseModel):
@@ -58,6 +80,7 @@ async def get_catalog():
 @router.post("")
 async def add_key(req: AddKeyRequest, request: Request):
     pool: ApiKeyPool = request.app.state.api_key_pool
+    effort = _validate_effort(req.reasoning_effort)
     added = 0
     for model in req.models:
         pool.add(
@@ -66,6 +89,7 @@ async def add_key(req: AddKeyRequest, request: Request):
             api_key=req.api_key,
             base_url=req.base_url,
             label=req.label,
+            reasoning_effort=effort,
         )
         added += 1
     return {"success": True, "added": added}
@@ -80,6 +104,7 @@ async def import_keys(req: ImportKeysRequest, request: Request):
 
     for key_data in req.keys:
         try:
+            effort = _validate_effort(key_data.reasoning_effort)
             for model in key_data.models:
                 pool.add(
                     provider=key_data.provider,
@@ -87,6 +112,7 @@ async def import_keys(req: ImportKeysRequest, request: Request):
                     api_key=key_data.api_key,
                     base_url=key_data.base_url,
                     label=key_data.label,
+                    reasoning_effort=effort,
                 )
                 added += 1
         except Exception as e:
@@ -133,6 +159,19 @@ async def update_status(key_id: str, req: UpdateStatusRequest, request: Request)
 async def update_label(key_id: str, req: UpdateLabelRequest, request: Request):
     pool: ApiKeyPool = request.app.state.api_key_pool
     success = pool.update_label(key_id, req.label)
+    if not success:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"message": f"Key {key_id} not found", "type": "not_found"}},
+        )
+    return {"success": True}
+
+
+@router.patch("/{key_id}/reasoning-effort")
+async def update_reasoning_effort(key_id: str, req: UpdateReasoningEffortRequest, request: Request):
+    pool: ApiKeyPool = request.app.state.api_key_pool
+    effort = _validate_effort(req.reasoning_effort)
+    success = pool.update_reasoning_effort(key_id, effort)
     if not success:
         return JSONResponse(
             status_code=404,
