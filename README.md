@@ -59,6 +59,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-06-22 11:29:42 | v1.6.22 - 🔁 第三方直连「同名多家」自动故障切换：同一模型 ID 配置多家第三方时，固定优先第一家，遇报错/限流/额度耗尽/超时/空响应即自动切下一家同名第三方，全部失败才报错，客户端只用一个模型名无感；流式在首字节前无缝换家，坏家内存冷却（`THIRDPARTY_FAILOVER_COOLDOWN` 默认 180 秒）、冷却期优先跳过到期自动恢复，全部冷却或仅一家仍照常尝试绝不饿死；默认生效无开关、单家零回归，不影响 Gemini→第三方兜底链 |
 | 2026-06-21 00:33:02 | v1.6.21 - 🔀 Gemini→第三方自动兜底链：任意 Gemini 模型（flash/pro/thinking）报错或返回空响应时，自动改用 API Key 池中的第三方模型原生重试，客户端无感、仍只用一个模型名；候选自动取池中第三方、按名排除 image/video/audio/embedding 等非聊天模型、随机轮询、一个失败（报错/空）就换下一个，统一非流式探测（报错/空都不误当成功）、流式转 SSE 含原生工具调用；`FALLBACK_ENABLED` 默认关、`FALLBACK_MODELS` 可选精确指定，零回归 |
 | 2026-06-19 22:40:00 | v1.6.20 - 🐳 修复 v1.6.19 非 root 镜像的升级回归：历史部署 `docker compose pull` 后因 ./data 属主非容器用户导致 PermissionError 启动崩溃。改为入口脚本以 root 启动→修复 data/api 卷属主→gosu 降权到非 root（uid 1000）运行，既保持非 root 加固又让 `docker compose pull && up -d` 无缝升级，无需手动 chown |
 | 2026-06-19 22:00:00 | v1.6.19 - 🔒 安全与质量强化批次：修复 6 处管理面板 XSS、2 处 SSRF（附件重定向绕过/转发 base_url 未校验）、设置写坏 .env 的永久 DoS、conversation_id 路径穿越；🔧 流式生图占位 URL 泄漏/转发 SSE 缺分隔符与 [DONE]、usage-stats 关闭时 500、accounts.json 原子写、账号 ID 冲突等多项；⚙️ 让 MODEL_WHITELIST/JITTER_ENABLED/VERSION_SYNC_INTERVAL 等配置真正生效；📄 文档/配置全面对齐 + 新增漂移测试；🐳 镜像非 root + CI 门禁可失败。全程零回归（63 测试 + ruff + 对抗复核通过）|
