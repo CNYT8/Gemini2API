@@ -54,6 +54,7 @@ class ApiKeyEntry:
     status: str
     added_at: str
     last_used_at: Optional[str]
+    reasoning_effort: Optional[str] = None
 
 
 class ApiKeyPool:
@@ -71,7 +72,8 @@ class ApiKeyPool:
         model: str,
         api_key: str,
         base_url: str,
-        label: Optional[str] = None
+        label: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> ApiKeyEntry:
         with self.lock:
             entry_id = uuid.uuid4().hex[:12]
@@ -84,7 +86,8 @@ class ApiKeyPool:
                 label=label,
                 status="active",
                 added_at=datetime.utcnow().isoformat(),
-                last_used_at=None
+                last_used_at=None,
+                reasoning_effort=reasoning_effort,
             )
             self.entries[entry_id] = entry
             self._save()
@@ -165,6 +168,14 @@ class ApiKeyPool:
         with self.lock:
             if id in self.entries:
                 self.entries[id].label = label
+                self._save()
+                return True
+            return False
+
+    def update_reasoning_effort(self, id: str, reasoning_effort: Optional[str]) -> bool:
+        with self.lock:
+            if id in self.entries:
+                self.entries[id].reasoning_effort = (reasoning_effort or None)
                 self._save()
                 return True
             return False
