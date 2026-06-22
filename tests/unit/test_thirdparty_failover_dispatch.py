@@ -105,3 +105,14 @@ def test_stream_fails_over(tmp_path, monkeypatch):
     resp = asyncio.run(oai._dispatch_thirdparty(_request_with_pool(pool), _req(stream=True), "deepseek"))
     assert resp is good
     assert ids[0] in pool._cooldowns
+
+
+def test_no_pool_returns_none():
+    request = types.SimpleNamespace(app=types.SimpleNamespace(state=types.SimpleNamespace()))
+    resp = asyncio.run(oai._dispatch_thirdparty(request, _req(), "deepseek"))
+    assert resp is None
+
+
+def test_thirdparty_ok_passthrough_non_jsonresponse():
+    assert oai._thirdparty_ok(StreamingResponse(iter([b"x"]))) is True
+    assert oai._thirdparty_ok("not-a-response") is True
