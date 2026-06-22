@@ -52,7 +52,7 @@ def test_all_cooled_still_returned_never_starve(tmp_path, monkeypatch):
     b = _add(pool, "deepseek")
     pool.mark_unhealthy(a.id, 180.0)
     pool.mark_unhealthy(b.id, 180.0)
-    assert {e.id for e in pool.get_entries_for_model("deepseek")} == {a.id, b.id}
+    assert [e.id for e in pool.get_entries_for_model("deepseek")] == [a.id, b.id]
 
 
 def test_mark_unhealthy_zero_is_noop(tmp_path, monkeypatch):
@@ -61,4 +61,6 @@ def test_mark_unhealthy_zero_is_noop(tmp_path, monkeypatch):
     pool = _fresh_pool(tmp_path)
     a = _add(pool, "deepseek")
     pool.mark_unhealthy(a.id, 0)
+    assert [e.id for e in pool.get_entries_for_model("deepseek")] == [a.id]
+    pool.mark_unhealthy(a.id, -5.0)
     assert [e.id for e in pool.get_entries_for_model("deepseek")] == [a.id]
