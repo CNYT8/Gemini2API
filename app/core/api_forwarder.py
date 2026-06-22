@@ -52,6 +52,37 @@ def _bad_request(message: str) -> JSONResponse:
     )
 
 
+def _make_async_client(timeout: float = 300.0) -> httpx.AsyncClient:
+    """集中创建 httpx 客户端，便于测试注入 MockTransport。"""
+    return httpx.AsyncClient(timeout=timeout)
+
+
+def _build_openai_request(entry: ApiKeyEntry, messages: list[dict], req) -> tuple[str, dict, dict]:
+    """构造 OpenAI 兼容 chat/completions 的 (url, headers, payload)。URL 不安全时抛 ValueError。"""
+    url = _build_safe_target_url(entry, "/chat/completions")
+    headers = {
+        "Authorization": f"Bearer {entry.api_key}",
+        "Content-Type": "application/json",
+    }
+    if entry.provider == "openrouter":
+        headers["HTTP-Referer"] = "https://github.com/gemini2api"
+        headers["X-Title"] = "Gemini2API"
+    payload = {
+        "model": entry.model,
+        "messages": messages,
+        "stream": req.stream,
+    }
+    if req.temperature is not None:
+        payload["temperature"] = req.temperature
+    if req.max_tokens is not None:
+        payload["max_tokens"] = req.max_tokens
+    if req.tools:
+        payload["tools"] = [t.model_dump() for t in req.tools]
+    if req.tool_choice is not None:
+        payload["tool_choice"] = req.tool_choice
+    return url, headers, payload
+
+
 async def forward_to_provider(
     entry: ApiKeyEntry,
     messages: list[dict],
@@ -94,37 +125,10 @@ async def _forward_openai_compatible(
     req: ChatRequest
 ) -> StreamingResponse | JSONResponse:
     """Forward request to OpenAI-compatible endpoint."""
-    # 修复：base_url 可能为 None（schema 允许省略）→ 之前 .rstrip 直接 AttributeError 崩溃；
-    # 同时补上 SSRF 校验。URL 构造放在 StreamingResponse / try 之前，故失败必须在此处转成 400，
-    # 否则流式路径会抛出未捕获异常导致裸 500。
     try:
-        url = _build_safe_target_url(entry, "/chat/completions")
+        url, headers, payload = _build_openai_request(entry, messages, req)
     except ValueError as e:
         return _bad_request(str(e))
-
-    headers = {
-        "Authorization": f"Bearer {entry.api_key}",
-        "Content-Type": "application/json",
-    }
-
-    if entry.provider == "openrouter":
-        headers["HTTP-Referer"] = "https://github.com/gemini2api"
-        headers["X-Title"] = "Gemini2API"
-
-    payload = {
-        "model": entry.model,
-        "messages": messages,
-        "stream": req.stream,
-    }
-
-    if req.temperature is not None:
-        payload["temperature"] = req.temperature
-    if req.max_tokens is not None:
-        payload["max_tokens"] = req.max_tokens
-    if req.tools:
-        payload["tools"] = [t.model_dump() for t in req.tools]
-    if req.tool_choice is not None:
-        payload["tool_choice"] = req.tool_choice
 
     if req.stream:
         # 关键修复：client 生命周期交给流生成器内部（async with），
@@ -208,6 +212,69 @@ async def _proxy_openai_stream(
     except Exception as e:
         logger.error(f"Unexpected error streaming from {provider}: {e}")
         yield f"data: {json.dumps({'error': {'message': f'Internal error: {e}', 'type': 'internal_error'}})}\n\n"
+
+
+async def open_openai_stream(
+    entry: ApiKeyEntry, messages: list[dict], req
+) -> tuple[StreamingResponse | None, JSONResponse | None]:
+    """OpenAI 兼容流式 pre-flight：先建连读响应头，状态<400 才提交流（让上层在开口前换家）。
+    成功 -> (StreamingResponse, None)；失败 -> (None, JSONResponse 错误)。"""
+    try:
+        url, headers, payload = _build_openai_request(entry, messages, req)
+    except ValueError as e:
+        return None, _bad_request(str(e))
+
+    client = _make_async_client(300.0)
+    try:
+        cm = client.stream("POST", url, headers=headers, json=payload)
+        response = await cm.__aenter__()
+    except httpx.RequestError as e:
+        await client.aclose()
+        return None, JSONResponse(
+            status_code=502,
+            content={"error": {"message": f"Failed to connect to {entry.provider}: {e}",
+                               "type": "connection_error"}},
+        )
+    except Exception as e:  # noqa: BLE001
+        await client.aclose()
+        return None, JSONResponse(
+            status_code=500,
+            content={"error": {"message": f"Internal error: {e}", "type": "internal_error"}},
+        )
+
+    if response.status_code >= 400:
+        body = await response.aread()
+        await cm.__aexit__(None, None, None)
+        await client.aclose()
+        try:
+            detail = json.loads(body)
+        except Exception:
+            detail = {"error": {"message": body.decode("utf-8", "replace")[:500], "type": "api_error"}}
+        return None, JSONResponse(status_code=response.status_code, content=detail)
+
+    async def _drain():
+        try:
+            async for line in response.aiter_lines():
+                if line.strip():
+                    yield f"{line}\n\n"
+        finally:
+            await cm.__aexit__(None, None, None)
+            await client.aclose()
+
+    return StreamingResponse(
+        _drain(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    ), None
+
+
+async def open_stream(
+    entry: ApiKeyEntry, messages: list[dict], req
+) -> tuple[StreamingResponse | None, JSONResponse | None]:
+    """供分发器使用的统一流式入口：openai 兼容走 pre-flight 故障切换；其余 provider 直接提交。"""
+    if entry.provider.lower() in ("openai", "openrouter", "custom"):
+        return await open_openai_stream(entry, messages, req)
+    return await forward_to_provider(entry, messages, req), None
 
 
 async def _forward_anthropic(
