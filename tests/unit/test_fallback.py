@@ -47,6 +47,14 @@ def test_openai_data_is_empty():
     assert openai_data_is_empty(
         {"choices": [{"message": {"content": None, "tool_calls": [{"id": "x"}]}}]}
     ) is False
+    # 仅有 reasoning_content 也算非空(思考模型)
+    assert openai_data_is_empty(
+        {"choices": [{"message": {"content": "", "reasoning_content": "想了想"}}]}
+    ) is False
+    # reasoning 也空 → 仍为空
+    assert openai_data_is_empty(
+        {"choices": [{"message": {"content": "", "reasoning_content": ""}}]}
+    ) is True
 
 
 def test_parse_fallback_models():

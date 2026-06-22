@@ -83,7 +83,8 @@ def openai_data_is_empty(data) -> bool:
     message = choices[0].get("message") or {}
     content = (message.get("content") or "").strip()
     tool_calls = message.get("tool_calls")
-    return not content and not tool_calls
+    reasoning = (message.get("reasoning_content") or "").strip()
+    return not content and not tool_calls and not reasoning
 
 
 def select_fallback_candidates(entries: list, names: list[str]) -> list:
