@@ -106,6 +106,7 @@ async def import_keys(req: ImportKeysRequest, request: Request):
                     api_key=key_data.api_key,
                     base_url=key_data.base_url,
                     label=key_data.label,
+                    reasoning_effort=_validate_effort(key_data.reasoning_effort),
                 )
                 added += 1
         except Exception as e:

@@ -56,3 +56,13 @@ def test_patch_reasoning_effort_not_found(tmp_path):
     resp = asyncio.run(ak.update_reasoning_effort(
         "ghost", ak.UpdateReasoningEffortRequest(reasoning_effort="low"), _req_with_pool(pool)))
     assert getattr(resp, "status_code", None) == 404
+
+
+def test_import_keys_preserves_effort(tmp_path):
+    pool = ApiKeyPool(file_path=str(tmp_path / "k.json"))
+    req = ak.ImportKeysRequest(keys=[ak.AddKeyRequest(
+        provider="openai", models=["m"], api_key="sk",
+        base_url="https://x/v1", reasoning_effort="high")])
+    asyncio.run(ak.import_keys(req, _req_with_pool(pool)))
+    entries = list(pool.entries.values())
+    assert entries and entries[0].reasoning_effort == "high"
