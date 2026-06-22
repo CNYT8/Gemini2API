@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     # 随机轮询、一个失败换下一个。FALLBACK_MODELS 为可选的精确指定（逗号分隔、按序尝试）；留空即自动。
     fallback_enabled: bool = False
     fallback_models: str = ""
+    # 第三方直连「同名多家」故障切换的坏家冷却时长（秒）。某第三方报错/额度耗尽/返回空后，
+    # 该时长内新请求优先跳过它，到期自动恢复参与。设 0 关闭冷却（每次都从第一家重试）。
+    # 该特性默认生效、无单独开关：仅当某 model 配置了同名多家时才有可见行为变化，单家零回归。
+    thirdparty_failover_cooldown: float = 180.0
 
     @field_validator("gemini_psid")
     @classmethod
