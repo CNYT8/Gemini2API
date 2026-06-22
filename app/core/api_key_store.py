@@ -175,7 +175,7 @@ class ApiKeyPool:
     def update_reasoning_effort(self, id: str, reasoning_effort: Optional[str]) -> bool:
         with self.lock:
             if id in self.entries:
-                self.entries[id].reasoning_effort = (reasoning_effort or None)
+                self.entries[id].reasoning_effort = None if reasoning_effort in (None, "") else reasoning_effort
                 self._save()
                 return True
             return False

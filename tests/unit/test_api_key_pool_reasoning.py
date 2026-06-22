@@ -1,6 +1,5 @@
 """ApiKeyEntry.reasoning_effort 存储与更新(纯逻辑,无网络)。"""
 
-from dataclasses import asdict
 from app.core.api_key_store import ApiKeyPool, ApiKeyEntry
 
 
