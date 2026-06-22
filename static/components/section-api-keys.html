@@ -1,6 +1,12 @@
 <link rel="stylesheet" href="components/section-api-keys.css?v=3">
 <script type="module" src="app/api-keys.js"></script>
 <section id="api-keys" class="section" aria-labelledby="api-keys-title">
+    <datalist id="ak-effort-presets">
+        <option value="none"></option>
+        <option value="low"></option>
+        <option value="medium"></option>
+        <option value="high"></option>
+    </datalist>
     <div class="section-header">
         <h2 id="api-keys-title" data-i18n="apiKeys.title">API 管理</h2>
         <div class="section-header-actions">
@@ -41,6 +47,11 @@
             <div class="form-group">
                 <label for="ak-label" data-i18n="apiKeys.label">标签 (可选)</label>
                 <input type="text" id="ak-label" data-i18n-placeholder="apiKeys.labelPlaceholder" placeholder="例如: 生产环境">
+            </div>
+            <div class="form-group">
+                <label for="ak-effort" data-i18n="apiKeys.reasoningEffort">思考 (可选)</label>
+                <input type="text" id="ak-effort" list="ak-effort-presets"
+                       data-i18n-placeholder="apiKeys.reasoningEffortPlaceholder" placeholder="默认(不设)">
             </div>
         </div>
         <div class="form-group ak-models-group">

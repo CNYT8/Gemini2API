@@ -166,6 +166,7 @@ async function handleAddKey() {
     const apiKey = document.getElementById('ak-apikey').value.trim();
     const baseUrl = document.getElementById('ak-baseurl').value.trim();
     const label = document.getElementById('ak-label').value.trim();
+    const reasoningEffort = document.getElementById('ak-effort').value.trim();
 
     if (!apiKey) { showToast('请填写 API Key', 'warning'); return; }
 
@@ -182,7 +183,7 @@ async function handleAddKey() {
     if (models.length === 0) { showToast('请至少选择一个模型', 'warning'); return; }
 
     try {
-        await apiCall('POST', '/admin/api-keys', { provider, models, api_key: apiKey, base_url: baseUrl, label });
+        await apiCall('POST', '/admin/api-keys', { provider, models, api_key: apiKey, base_url: baseUrl, label, reasoning_effort: reasoningEffort || null });
         showToast('添加成功', 'success');
         hideAddPanel();
         await loadApiKeys();
@@ -199,6 +200,7 @@ function resetAddForm() {
     document.getElementById('ak-label').value = '';
     document.getElementById('ak-custom-model').value = '';
     document.getElementById('ak-models-list').innerHTML = '';
+    document.getElementById('ak-effort').value = '';
 }
 
 function renderKeysList() {
@@ -214,7 +216,7 @@ function renderKeysList() {
 
     let html = '<table><thead><tr>';
     html += '<th><input type="checkbox" id="ak-select-all"></th>';
-    html += '<th>Provider</th><th>模型</th><th>API Key</th><th>标签</th><th>状态</th><th>操作</th>';
+    html += '<th>Provider</th><th>模型</th><th>API Key</th><th>标签</th><th>状态</th><th>思考</th><th>操作</th>';
     html += '</tr></thead><tbody>';
 
     keysData.forEach(key => {
@@ -234,6 +236,9 @@ function renderKeysList() {
         html += '<td><span class="ak-key-masked">' + escapeHtml(String(key.api_key ?? '-')) + '</span></td>';
         html += '<td>' + escapeHtml(String(key.label ?? '-')) + '</td>';
         html += '<td><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span></td>';
+        html += '<td><input type="text" class="ak-effort-input" data-id="' + idEsc +
+                '" list="ak-effort-presets" value="' + escapeAttr(String(key.reasoning_effort ?? '')) +
+                '" placeholder="默认" style="width:90px"></td>';
         html += '<td class="ak-actions">';
         html += '<button class="btn btn-xs btn-outline ak-toggle-btn" data-id="' + idEsc + '" data-status="' + escapeAttr(key.status) + '">' + escapeHtml(toggleText) + '</button>';
         html += '<button class="btn btn-xs btn-danger ak-del-btn" data-id="' + idEsc + '"><i class="fas fa-trash"></i></button>';
@@ -247,6 +252,7 @@ function renderKeysList() {
     container.querySelectorAll('.ak-cb').forEach(cb => cb.addEventListener('change', handleCheckboxChange));
     container.querySelectorAll('.ak-toggle-btn').forEach(btn => btn.addEventListener('click', handleStatusToggle));
     container.querySelectorAll('.ak-del-btn').forEach(btn => btn.addEventListener('click', handleDelete));
+    container.querySelectorAll('.ak-effort-input').forEach(inp => inp.addEventListener('change', handleEffortChange));
 }
 
 function handleSelectAll(e) {
@@ -283,6 +289,19 @@ async function handleStatusToggle(e) {
     try {
         await apiCall('PATCH', '/admin/api-keys/' + id + '/status', { status: newStatus });
         showToast('状态已更新', 'success');
+        await loadApiKeys();
+    } catch (error) {
+        showToast('更新失败: ' + error.message, 'error');
+    }
+}
+
+async function handleEffortChange(e) {
+    const inp = e.currentTarget;
+    const id = inp.dataset.id;
+    const value = inp.value.trim();
+    try {
+        await apiCall('PATCH', '/admin/api-keys/' + id + '/reasoning-effort', { reasoning_effort: value || null });
+        showToast('思考设置已更新', 'success');
         await loadApiKeys();
     } catch (error) {
         showToast('更新失败: ' + error.message, 'error');
