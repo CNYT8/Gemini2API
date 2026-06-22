@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [1.6.23] - 2026-06-22
+
+### Added
+- 🧠 **第三方「每模型思考(reasoning_effort)」设置**:API 管理里可为每条第三方模型配置思考等级（默认不设 / none / low / medium / high / 自定义），转发时按设置自动注入——OpenAI 兼容上游注入 `reasoning_effort`，Anthropic 上游换算成 `thinking`（budget_tokens）并把响应 thinking 映射回 `reasoning_content`。默认不设时零回归;不支持思考的模型留默认即可。
+
+### Fixed
+- `reasoning_content` 纳入"空响应"判定:仅返回思考内容（content 暂空）不再被误判为空而触发切换/兜底。
+
 ## [1.6.22] - 2026-06-22
 
 ### Added
