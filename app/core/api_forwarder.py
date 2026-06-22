@@ -333,6 +333,18 @@ async def _forward_anthropic(
             })
         payload["tools"] = anthropic_tools
 
+    LEVEL_BUDGET = {"low": 1024, "medium": 2048, "high": 4096}
+    effort = (getattr(entry, "reasoning_effort", None) or "").strip().lower()
+    budget = None
+    if effort in LEVEL_BUDGET:
+        budget = LEVEL_BUDGET[effort]
+    elif effort.isdigit():
+        budget = max(int(effort), 1024)
+    if budget is not None:
+        payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        if payload.get("max_tokens", 0) <= budget:
+            payload["max_tokens"] = budget + 1024
+
     if req.stream:
         # 关键修复：同 openai 流式，client 生命周期交给流生成器内部，保证流式期间连接存活
         return StreamingResponse(
@@ -342,7 +354,7 @@ async def _forward_anthropic(
         )
 
     try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
+        async with _make_async_client(300.0) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             anthropic_response = response.json()
@@ -391,11 +403,14 @@ def _convert_anthropic_to_openai(anthropic_response: dict, model: str) -> dict:
     # Extract content
     content_blocks = anthropic_response.get("content", [])
     text_content = ""
+    reasoning_content = ""
     tool_calls = []
 
     for block in content_blocks:
         if block.get("type") == "text":
             text_content += block.get("text", "")
+        elif block.get("type") == "thinking":
+            reasoning_content += block.get("thinking", "")
         elif block.get("type") == "tool_use":
             call_id = block.get("id", f"call_{uuid.uuid4().hex[:8]}")
             tool_calls.append({
@@ -411,6 +426,8 @@ def _convert_anthropic_to_openai(anthropic_response: dict, model: str) -> dict:
     message = {"role": "assistant"}
     if text_content:
         message["content"] = text_content
+    if reasoning_content:
+        message["reasoning_content"] = reasoning_content
     if tool_calls:
         message["tool_calls"] = tool_calls
 
@@ -524,6 +541,19 @@ async def _anthropic_stream_to_openai(response: httpx.Response, model: str) -> A
                         "choices": [{
                             "index": 0,
                             "delta": {"content": text},
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                elif delta.get("type") == "thinking_delta":
+                    chunk = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": 0,
+                        "model": model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"reasoning_content": delta.get("thinking", "")},
                             "finish_reason": None
                         }]
                     }
