@@ -250,6 +250,12 @@ async def list_models(request: Request):
         for entry in pool.entries.values():
             if entry.status == 'active' and entry.model not in models:
                 models.append(entry.model)
+    # 把已暴露的 gem 模型名并进列表
+    gem_mapping = getattr(request.app.state, "gem_mapping", None)
+    if gem_mapping:
+        for gem_model_name in gem_mapping.get_all().keys():
+            if gem_model_name not in models:
+                models.append(gem_model_name)
     # MODEL_WHITELIST 过滤（为空则放行全部）
     models = _apply_model_whitelist(models)
     now = int(time.time())
@@ -262,6 +268,17 @@ async def list_models(request: Request):
 async def chat_completions(req: ChatRequest, request: Request):
     model_mapping = request.app.state.model_mapping
     resolved_model = model_mapping.resolve(req.model)
+
+    # gem 模型解析：命中则取出 gem_id/account_id，并把对话模型换成 base_model
+    gem_mapping = getattr(request.app.state, "gem_mapping", None)
+    gem_id = None
+    gem_account_id = None
+    if gem_mapping:
+        gem_info = gem_mapping.resolve(resolved_model)
+        if gem_info:
+            gem_id = gem_info.get("gem_id")
+            gem_account_id = gem_info.get("account_id") or None
+            resolved_model = gem_info.get("base_model") or "gemini-pro"
 
     if resolved_model not in gemini_client.models and _resolve_model(resolved_model) not in GEMINI_MODELS:
         tp = await _dispatch_thirdparty(request, req, resolved_model)
@@ -307,13 +324,14 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model, attachments, _image_base(request), request, req),
+            _stream_response(prompt, resolved_model, has_tools, gemini_conv_id, conv, messages_raw, req.model, attachments, _image_base(request), request, req, gem_id, gem_account_id),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     try:
-        result = await gemini_client.generate(prompt, resolved_model, gemini_conv_id, attachments)
+        result = await gemini_client.generate(prompt, resolved_model, gemini_conv_id, attachments,
+                                              gem_id=gem_id, account_id=gem_account_id)
     except (RuntimeError, ValueError) as e:
         # Fallback: 如果 conversation_id 过期，用完整 prompt 重试
         if gemini_conv_id:
@@ -322,7 +340,8 @@ async def chat_completions(req: ChatRequest, request: Request):
                 tools_raw = [t.model_dump() for t in req.tools]
                 prompt = build_tool_prompt(prompt, tools_raw, req.tool_choice)
             try:
-                result = await gemini_client.generate(prompt, resolved_model)
+                result = await gemini_client.generate(prompt, resolved_model,
+                                                       gem_id=gem_id, account_id=gem_account_id)
                 gemini_conv_id = ""
             except Exception:
                 fb = await _fallback_result(request, req, messages_raw, resolved_model)
@@ -415,7 +434,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     )
 
 
-async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "", attachments=None, base_url: str = "", request=None, req=None) -> AsyncGenerator[str, None]:
+async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, display_model: str = "", attachments=None, base_url: str = "", request=None, req=None, gem_id=None, account_id=None) -> AsyncGenerator[str, None]:
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     model_name = display_model or model
 
@@ -425,7 +444,7 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     if has_tools or attachments or maybe_image_generation_intent(prompt):
         async for sse in _stream_response_buffered(
             prompt, model, has_tools, gemini_conv_id, conv, messages_raw,
-            model_name, completion_id, attachments, base_url, request, req
+            model_name, completion_id, attachments, base_url, request, req, gem_id, account_id
         ):
             yield sse
         return
@@ -442,7 +461,8 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     final_images = []
     streamed_any = False
     try:
-        async for evt in gemini_client.generate_stream(prompt, model, gemini_conv_id, attachments):
+        async for evt in gemini_client.generate_stream(prompt, model, gemini_conv_id, attachments,
+                                                        gem_id=gem_id, account_id=account_id):
             if evt.get("type") == "delta":
                 # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                 delta = evt.get("text", "")
@@ -476,7 +496,8 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
         if gemini_conv_id and messages_raw and not streamed_any:
             try:
                 retry_prompt = build_prompt_from_messages(messages_raw)
-                result = await gemini_client.generate(retry_prompt, model, "", attachments)
+                result = await gemini_client.generate(retry_prompt, model, "", attachments,
+                                                      gem_id=gem_id, account_id=account_id)
                 full_text = result.get("text", "")
                 new_conv_id = result.get("conversation_id", "")
                 final_images = result.get("images") or []
@@ -546,7 +567,7 @@ def _err_chunk(completion_id: str, model_name: str, msg: str) -> str:
     return format_sse(chunk.model_dump()) + "data: [DONE]\n\n"
 
 
-async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, model_name: str = "", completion_id: str = "", attachments=None, base_url: str = "", request=None, req=None) -> AsyncGenerator[str, None]:
+async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, gemini_conv_id: str = "", conv=None, messages_raw=None, model_name: str = "", completion_id: str = "", attachments=None, base_url: str = "", request=None, req=None, gem_id=None, account_id=None) -> AsyncGenerator[str, None]:
     """非流式收集 + 切片伪流式：用于有工具调用/附件、需要完整文本的场景。"""
     # 立即发出首帧 SSE，避免生图/工具路径在 generate() 阻塞期间零字节导致前置代理超时。
     first = StreamChunk(
@@ -556,7 +577,8 @@ async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, ge
     yield format_sse(first.model_dump())
 
     async def _run_generate():
-        return await gemini_client.generate(prompt, model, gemini_conv_id, attachments)
+        return await gemini_client.generate(prompt, model, gemini_conv_id, attachments,
+                                            gem_id=gem_id, account_id=account_id)
 
     gen_task = asyncio.create_task(_run_generate())
     async for ping in _sse_keepalive_during(gen_task):
@@ -568,7 +590,8 @@ async def _stream_response_buffered(prompt: str, model: str, has_tools: bool, ge
         if gemini_conv_id and messages_raw:
             full_prompt = build_prompt_from_messages(messages_raw)
             retry_task = asyncio.create_task(
-                gemini_client.generate(full_prompt, model, "", attachments)
+                gemini_client.generate(full_prompt, model, "", attachments,
+                                       gem_id=gem_id, account_id=account_id)
             )
             async for ping in _sse_keepalive_during(retry_task):
                 yield ping

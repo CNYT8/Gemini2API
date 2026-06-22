@@ -119,6 +119,17 @@ async def generate_content(model: str, req: GeminiRequest, request: Request):
     if model.startswith("models/"):
         model = model[7:]
 
+    # gem 模型解析：命中则取出 gem_id/account_id，并把对话模型换成 base_model
+    gem_mapping = getattr(request.app.state, "gem_mapping", None)
+    gem_id = None
+    gem_account_id = None
+    if gem_mapping:
+        gem_info = gem_mapping.resolve(model)
+        if gem_info:
+            gem_id = gem_info.get("gem_id")
+            gem_account_id = gem_info.get("account_id") or None
+            model = gem_info.get("base_model") or "gemini-pro"
+
     messages, attachments = _parse_contents(req.contents)
     system = _parse_system(req.system_instruction)
     prompt = build_prompt_from_messages(messages, system=system)
@@ -134,7 +145,8 @@ async def generate_content(model: str, req: GeminiRequest, request: Request):
             prompt = build_tool_prompt(prompt, function_declarations)
 
     try:
-        result = await gemini_client.generate(prompt, model, "", attachments)
+        result = await gemini_client.generate(prompt, model, "", attachments,
+                                              gem_id=gem_id, account_id=gem_account_id)
     except (RuntimeError, ValueError) as e:
         return JSONResponse(
             status_code=500 if "retry" in str(e).lower() else 400,
@@ -204,6 +216,17 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
     if model.startswith("models/"):
         model = model[7:]
 
+    # gem 模型解析：命中则取出 gem_id/account_id，并把对话模型换成 base_model
+    gem_mapping = getattr(request.app.state, "gem_mapping", None)
+    gem_id = None
+    gem_account_id = None
+    if gem_mapping:
+        gem_info = gem_mapping.resolve(model)
+        if gem_info:
+            gem_id = gem_info.get("gem_id")
+            gem_account_id = gem_info.get("account_id") or None
+            model = gem_info.get("base_model") or "gemini-pro"
+
     messages, attachments = _parse_contents(req.contents)
     system = _parse_system(req.system_instruction)
     prompt = build_prompt_from_messages(messages, system=system)
@@ -233,7 +256,8 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
         # 有工具/附件：需完整文本，走非流式收集后切片（零回归）
         if has_tools or attachments:
             try:
-                result = await gemini_client.generate(prompt, model, "", attachments)
+                result = await gemini_client.generate(prompt, model, "", attachments,
+                                                      gem_id=gem_id, account_id=gem_account_id)
             except Exception as e:
                 yield json.dumps({"error": {"message": str(e), "type": "api_error"}}) + "\n"
                 return
@@ -247,7 +271,8 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
         else:
             # === 真流式路径（纯文本）===
             try:
-                async for evt in gemini_client.generate_stream(prompt, model, "", attachments):
+                async for evt in gemini_client.generate_stream(prompt, model, "", attachments,
+                                                                gem_id=gem_id, account_id=gem_account_id):
                     if evt.get("type") == "delta":
                         # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                         delta = evt.get("text", "")

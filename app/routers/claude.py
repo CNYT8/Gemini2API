@@ -75,6 +75,18 @@ async def create_message(req: ClaudeRequest, request: Request):
     prompt = build_prompt_from_messages(messages_raw, system=req.system)
     attachments = extract_attachments(messages_raw)
 
+    # gem 模型解析：命中则取出 gem_id/account_id，并把对话模型换成 base_model
+    resolved_model = req.model
+    gem_mapping = getattr(request.app.state, "gem_mapping", None)
+    gem_id = None
+    gem_account_id = None
+    if gem_mapping:
+        gem_info = gem_mapping.resolve(resolved_model)
+        if gem_info:
+            gem_id = gem_info.get("gem_id")
+            gem_account_id = gem_info.get("account_id") or None
+            resolved_model = gem_info.get("base_model") or "gemini-pro"
+
     has_tools = bool(req.tools)
     # 生图意图优先：带 tools 但明确生图意图时跳过工具模拟，直接生图（否则生图被压制）
     if has_tools and is_image_generation_intent(prompt):
@@ -98,13 +110,14 @@ async def create_message(req: ClaudeRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            _stream_claude(prompt, req.model, has_tools, attachments),
+            _stream_claude(prompt, resolved_model, has_tools, attachments, req.model, gem_id, gem_account_id),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     try:
-        result = await gemini_client.generate(prompt, req.model, "", attachments)
+        result = await gemini_client.generate(prompt, resolved_model, "", attachments,
+                                              gem_id=gem_id, account_id=gem_account_id)
     except (RuntimeError, ValueError) as e:
         return JSONResponse(
             status_code=500 if "retry" in str(e).lower() else 400,
@@ -175,12 +188,13 @@ async def count_tokens(req: ClaudeRequest):
     return {"input_tokens": count}
 
 
-async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=None) -> AsyncGenerator[str, None]:
+async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=None, display_model: str = "", gem_id=None, account_id=None) -> AsyncGenerator[str, None]:
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
+    model_name = display_model or model
 
     # 有工具/附件：需完整文本，走非流式收集后切片（零回归）
     if has_tools or attachments:
-        async for sse in _stream_claude_buffered(prompt, model, has_tools, attachments, msg_id):
+        async for sse in _stream_claude_buffered(prompt, model, has_tools, attachments, msg_id, model_name, gem_id, account_id):
             yield sse
         return
 
@@ -192,7 +206,7 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
             "type": "message",
             "role": "assistant",
             "content": [],
-            "model": model,
+            "model": model_name,
             "usage": {"input_tokens": estimate_tokens(prompt), "output_tokens": 0},
         },
     })
@@ -204,7 +218,8 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
 
     full_text = ""
     try:
-        async for evt in gemini_client.generate_stream(prompt, model, "", attachments):
+        async for evt in gemini_client.generate_stream(prompt, model, "", attachments,
+                                                        gem_id=gem_id, account_id=account_id):
             if evt.get("type") == "delta":
                 # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                 delta = evt.get("text", "")
@@ -246,10 +261,12 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
     yield format_sse({"type": "message_stop"})
 
 
-async def _stream_claude_buffered(prompt: str, model: str, has_tools: bool, attachments, msg_id: str) -> AsyncGenerator[str, None]:
+async def _stream_claude_buffered(prompt: str, model: str, has_tools: bool, attachments, msg_id: str, display_model: str = "", gem_id=None, account_id=None) -> AsyncGenerator[str, None]:
     """非流式收集 + 切片：用于有工具调用/附件的场景。"""
+    model_name = display_model or model
     try:
-        result = await gemini_client.generate(prompt, model, "", attachments)
+        result = await gemini_client.generate(prompt, model, "", attachments,
+                                              gem_id=gem_id, account_id=account_id)
     except Exception as e:
         yield format_sse({"type": "error", "error": {"type": "api_error", "message": str(e)}})
         return
@@ -263,7 +280,7 @@ async def _stream_claude_buffered(prompt: str, model: str, has_tools: bool, atta
             "type": "message",
             "role": "assistant",
             "content": [],
-            "model": model,
+            "model": model_name,
             "usage": {"input_tokens": estimate_tokens(prompt), "output_tokens": 0},
         },
     })
