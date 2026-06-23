@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from app.core.api_key_store import ApiKeyPool, PROVIDER_CATALOG
 from app.utils.net_guard import assert_safe_url, UnsafeURLError
+from app.config import settings
+from app.routers.settings import _update_env_file
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/api-keys", tags=["API Keys"])
@@ -60,6 +62,10 @@ class FetchModelsRequest(BaseModel):
     base_url: str
 
 
+class FallbackToggleRequest(BaseModel):
+    enabled: bool
+
+
 @router.get("")
 async def list_keys(request: Request):
     pool: ApiKeyPool = request.app.state.api_key_pool
@@ -70,6 +76,27 @@ async def list_keys(request: Request):
 @router.get("/catalog")
 async def get_catalog():
     return {"catalog": PROVIDER_CATALOG}
+
+
+@router.get("/fallback")
+async def get_fallback():
+    """读取 Gemini→第三方 兜底开关当前状态。"""
+    return {"enabled": bool(getattr(settings, "fallback_enabled", False))}
+
+
+@router.patch("/fallback")
+async def set_fallback(req: FallbackToggleRequest):
+    """开/关 Gemini→第三方 兜底：更新内存 settings + 落盘 .env，实时生效（无需重启）。
+    仅影响"兜底"，不影响第三方直连与 /v1/models。"""
+    old = bool(getattr(settings, "fallback_enabled", False))
+    object.__setattr__(settings, "fallback_enabled", req.enabled)
+    try:
+        _update_env_file({"fallback_enabled": req.enabled})
+    except Exception as e:
+        object.__setattr__(settings, "fallback_enabled", old)  # 回滚，避免内存改了盘没改
+        logger.error(f"Failed to persist fallback toggle: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to persist fallback setting: {e}")
+    return {"success": True, "enabled": req.enabled}
 
 
 @router.post("")
