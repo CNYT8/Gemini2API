@@ -58,6 +58,7 @@
 
 | Date | Update |
 |------|--------|
+| 2026-06-23 00:00:00 | v1.6.25 - 🎚️ Gemini fallback toggle in API Management: one-click enable/disable of the Gemini→third-party fallback chain, takes effect instantly and persists (previously required editing .env and restarting); the toggle only controls fallback — third-party models are always reachable directly and always listed in /v1/models |
 | 2026-06-22 20:06:08 | v1.6.24 - 🧩 Custom Gem support: new "Gem Management" page in the admin panel lets you list / create / edit / delete your own custom Gems; expose any Gem as a model name — any OpenAI-compatible client calling that model name will converse using that Gem's persona; each Gem is bound to its owner account (calls go only to the bound account, not round-robined); deleting a Gem automatically removes its model-name mapping |
 | 2026-06-22 14:21:48 | v1.6.23 - 🧠 Per-model thinking (reasoning_effort) setting for third parties: configure a thinking level per third-party model in API Management (unset / none / low / medium / high / custom); the relay auto-injects it on forward — reasoning_effort for OpenAI-compatible upstreams, mapped to thinking (budget_tokens) for Anthropic with the response thinking mapped back to reasoning_content; zero regression when unset, leave non-thinking models unset; also fixes "a reasoning-only response (content temporarily empty) wrongly treated as empty" |
 | 2026-06-22 11:29:42 | v1.6.22 - 🔁 Third-party direct-call same-model multi-provider failover: when one model ID has multiple third-party providers in API Management, the direct call sticks to the first and, on error / rate-limit / quota-exhaustion / timeout / empty response, auto-switches to the next same-model provider, returning the last error only if all fail — the client sees one model name, transparently; streaming fails over before the first byte, failed providers enter an in-memory cooldown (`THIRDPARTY_FAILOVER_COOLDOWN`, default 180s) and are skipped until it expires, yet are still tried when all are cooling or only one exists (never starves); on by default with no switch, single-provider zero regression, Gemini→third-party fallback chain unaffected |
@@ -541,6 +542,7 @@ response = client.chat.completions.create(
 - [x] Auto-cleanup of accumulated web sessions (periodically delete old sessions, keep pinned)
 - [ ] Image/file upload support
 - [x] [issues #2](https://github.com/xwteam/gemini2api/issues/2) Custom Gemini Gem support (panel list / create / update / delete + expose as a model name)
+- [x] Gemini fallback toggle in API Management (instant on/off with persistence, no .env edit or restart needed)
 
 ---
 
