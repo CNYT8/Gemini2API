@@ -100,3 +100,62 @@ def test_build_responses_object_omits_unset_request_params():
                                  request_params={}, usage={"input_tokens": 0, "output_tokens": 0})
     assert "tools" not in obj
     assert "tool_choice" not in obj
+
+
+import json
+from app.core.responses_protocol import ResponsesStreamEncoder
+
+
+def _parse_frame(frame: str) -> tuple[str, dict]:
+    lines = frame.strip("\n").split("\n")
+    event_line = next(l for l in lines if l.startswith("event:"))
+    data_line = next(l for l in lines if l.startswith("data:"))
+    return event_line[len("event:"):].strip(), json.loads(data_line[len("data:"):].strip())
+
+
+def test_sequence_number_increments_across_calls():
+    enc = ResponsesStreamEncoder("resp_1", "gemini-pro", {})
+    _, d1 = _parse_frame(enc.created())
+    _, d2 = _parse_frame(enc.in_progress())
+    assert d1["sequence_number"] == 0
+    assert d2["sequence_number"] == 1
+
+
+def test_text_message_flow_emits_done_events_in_order():
+    enc = ResponsesStreamEncoder("resp_1", "gemini-pro", {})
+    frames = []
+    frames += enc.text_message_start("msg_1", 0)
+    frames.append(enc.text_delta("msg_1", 0, "Hel"))
+    frames.append(enc.text_delta("msg_1", 0, "lo"))
+    frames += enc.text_message_end("msg_1", 0, "Hello")
+    events = [_parse_frame(f)[0] for f in frames]
+    assert events == [
+        "response.output_item.added", "response.content_part.added",
+        "response.output_text.delta", "response.output_text.delta",
+        "response.output_text.done", "response.content_part.done", "response.output_item.done",
+    ]
+    done_evt = _parse_frame(frames[-3])[1]
+    assert done_evt["type"] == "response.output_text.done"
+    assert done_evt["text"] == "Hello"
+    assert done_evt["item_id"] == "msg_1"
+
+
+def test_function_call_flow_emits_arguments_done_event():
+    enc = ResponsesStreamEncoder("resp_1", "gemini-pro", {})
+    frames = enc.function_call("fc_1", 0, "call_abc", "run_shell", '{"cmd":"ls"}')
+    events = [_parse_frame(f)[0] for f in frames]
+    assert events == [
+        "response.output_item.added", "response.function_call_arguments.delta",
+        "response.function_call_arguments.done", "response.output_item.done",
+    ]
+    done_evt = _parse_frame(frames[2])[1]
+    assert done_evt["type"] == "response.function_call_arguments.done"
+    assert done_evt["arguments"] == '{"cmd":"ls"}'
+    assert done_evt["item_id"] == "fc_1"
+
+
+def test_no_done_sentinel_anywhere():
+    enc = ResponsesStreamEncoder("resp_1", "gemini-pro", {})
+    frame = enc.completed(output=[], usage={"input_tokens": 1, "output_tokens": 1})
+    assert "[DONE]" not in frame
+    assert not hasattr(enc, "done_sentinel")

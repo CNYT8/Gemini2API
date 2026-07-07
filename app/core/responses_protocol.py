@@ -112,3 +112,94 @@ def build_responses_object(*, model: str, status: str, output: list[dict],
         if key in request_params:
             obj[key] = request_params[key]
     return obj
+
+
+class ResponsesStreamEncoder:
+    """流式 SSE 事件编码器：严格按官方顺序 + 递增 sequence_number，
+    修正参考实现（kiro-go）漏发的 output_text.done / function_call_arguments.done，
+    且不发送 [DONE]（新协议完成信号是 response.completed）。"""
+
+    def __init__(self, response_id: str, model: str, request_params: dict):
+        self._response_id = response_id
+        self._model = model
+        self._request_params = request_params
+        self._seq = 0
+
+    def _send(self, event_type: str, payload: dict) -> str:
+        body = {"type": event_type, "sequence_number": self._seq}
+        body.update(payload)
+        self._seq += 1
+        return f"event: {event_type}\ndata: {json.dumps(body)}\n\n"
+
+    def created(self) -> str:
+        obj = build_responses_object(model=self._model, status="in_progress", output=[],
+                                     request_params=self._request_params)
+        obj["id"] = self._response_id
+        return self._send("response.created", {"response": obj})
+
+    def in_progress(self) -> str:
+        obj = build_responses_object(model=self._model, status="in_progress", output=[],
+                                     request_params=self._request_params)
+        obj["id"] = self._response_id
+        return self._send("response.in_progress", {"response": obj})
+
+    def text_message_start(self, item_id: str, output_index: int) -> list[str]:
+        item = {"id": item_id, "type": "message", "role": "assistant",
+               "status": "in_progress", "content": []}
+        frames = [self._send("response.output_item.added",
+                             {"output_index": output_index, "item": item})]
+        part = {"type": "output_text", "text": "", "annotations": []}
+        frames.append(self._send("response.content_part.added",
+                                 {"item_id": item_id, "output_index": output_index,
+                                  "content_index": 0, "part": part}))
+        return frames
+
+    def text_delta(self, item_id: str, output_index: int, delta: str) -> str:
+        return self._send("response.output_text.delta",
+                          {"item_id": item_id, "output_index": output_index,
+                           "content_index": 0, "delta": delta})
+
+    def text_message_end(self, item_id: str, output_index: int, full_text: str) -> list[str]:
+        frames = [self._send("response.output_text.done",
+                             {"item_id": item_id, "output_index": output_index,
+                              "content_index": 0, "text": full_text})]
+        part = {"type": "output_text", "text": full_text, "annotations": []}
+        frames.append(self._send("response.content_part.done",
+                                 {"item_id": item_id, "output_index": output_index,
+                                  "content_index": 0, "part": part}))
+        item = {"id": item_id, "type": "message", "role": "assistant", "status": "completed",
+               "content": [part]}
+        frames.append(self._send("response.output_item.done",
+                                 {"output_index": output_index, "item": item}))
+        return frames
+
+    def function_call(self, item_id: str, output_index: int, call_id: str,
+                      name: str, arguments_json: str) -> list[str]:
+        added_item = {"id": item_id, "type": "function_call", "status": "in_progress",
+                     "call_id": call_id, "name": name, "arguments": ""}
+        frames = [self._send("response.output_item.added",
+                             {"output_index": output_index, "item": added_item})]
+        frames.append(self._send("response.function_call_arguments.delta",
+                                 {"item_id": item_id, "output_index": output_index,
+                                  "delta": arguments_json}))
+        frames.append(self._send("response.function_call_arguments.done",
+                                 {"item_id": item_id, "output_index": output_index,
+                                  "arguments": arguments_json}))
+        done_item = {"id": item_id, "type": "function_call", "status": "completed",
+                    "call_id": call_id, "name": name, "arguments": arguments_json}
+        frames.append(self._send("response.output_item.done",
+                                 {"output_index": output_index, "item": done_item}))
+        return frames
+
+    def completed(self, output: list[dict], usage: dict) -> str:
+        obj = build_responses_object(model=self._model, status="completed", output=output,
+                                     request_params=self._request_params, usage=usage)
+        obj["id"] = self._response_id
+        return self._send("response.completed", {"response": obj})
+
+    def failed(self, message: str) -> str:
+        obj = build_responses_object(model=self._model, status="failed", output=[],
+                                     request_params=self._request_params,
+                                     error={"code": "internal_error", "message": message})
+        obj["id"] = self._response_id
+        return self._send("response.failed", {"response": obj})
