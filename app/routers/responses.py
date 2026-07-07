@@ -144,5 +144,64 @@ async def create_response(request: Request):
 
 async def _stream_gemini_response(prompt, model, has_tools, attachments, gem_id, gem_account_id,
                                   request_params):
-    raise NotImplementedError("implemented in Task 5")
-    yield  # pragma: no cover — 让函数保持 async generator 类型，Task 5 替换整个函数体
+    response_id = new_response_id()
+    enc = ResponsesStreamEncoder(response_id, model, request_params)
+    yield enc.created()
+    yield enc.in_progress()
+
+    if has_tools or attachments:
+        # 工具调用/附件：需要完整文本才能判断，走非流式收集（同 openai.py 的 buffered 门禁）
+        try:
+            result = await gemini_client.generate(prompt, model, "", attachments,
+                                                  gem_id=gem_id, account_id=gem_account_id)
+        except Exception as e:
+            yield enc.failed(str(e))
+            return
+        text = result.get("text", "")
+        output, _ = _build_output_items(text, has_tools)
+        for idx, item in enumerate(output):
+            if item["type"] == "function_call":
+                for frame in enc.function_call(item["id"], idx, item["call_id"],
+                                               item["name"], item["arguments"]):
+                    yield frame
+            else:
+                msg_id = item["id"]
+                for frame in enc.text_message_start(msg_id, idx):
+                    yield frame
+                full_text = item["content"][0]["text"]
+                for frame in enc.text_message_end(msg_id, idx, full_text):
+                    yield frame
+        usage = {"input_tokens": estimate_tokens(prompt), "output_tokens": estimate_tokens(text)}
+        yield enc.completed(output, usage)
+        return
+
+    # 真流式路径：无工具/附件，逐块转发
+    msg_id = f"msg_{uuid.uuid4().hex}"
+    for frame in enc.text_message_start(msg_id, 0):
+        yield frame
+    full_text = ""
+    try:
+        async for evt in gemini_client.generate_stream(prompt, model, "", attachments,
+                                                        gem_id=gem_id, account_id=gem_account_id):
+            if evt.get("type") == "delta":
+                delta = evt.get("text", "")
+                if delta:
+                    full_text += delta
+                    yield enc.text_delta(msg_id, 0, delta)
+            elif evt.get("type") == "final":
+                final_text = evt.get("text", full_text)
+                if final_text.startswith(full_text) and len(final_text) > len(full_text):
+                    tail = final_text[len(full_text):]
+                    if tail:
+                        yield enc.text_delta(msg_id, 0, tail)
+                full_text = final_text
+    except Exception as e:
+        yield enc.failed(str(e))
+        return
+
+    for frame in enc.text_message_end(msg_id, 0, full_text):
+        yield frame
+    output = [{"id": msg_id, "type": "message", "role": "assistant", "status": "completed",
+              "content": [{"type": "output_text", "text": full_text, "annotations": []}]}]
+    usage = {"input_tokens": estimate_tokens(prompt), "output_tokens": estimate_tokens(full_text)}
+    yield enc.completed(output, usage)

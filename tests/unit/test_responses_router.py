@@ -66,3 +66,41 @@ def test_responses_with_tool_call_returns_function_call_item(gem_client, monkeyp
     assert item["type"] == "function_call"
     assert item["name"] == "run_shell"
     assert json.loads(item["arguments"]) == {"cmd": "ls"}
+
+
+def test_responses_stream_emits_output_text_done_event(client, monkeypatch):
+    import app.routers.responses as rr
+
+    async def fake_generate_stream(prompt, model, conversation_id="", attachments=None,
+                                   gem_id=None, account_id=None):
+        yield {"type": "delta", "text": "Hel"}
+        yield {"type": "delta", "text": "lo"}
+        yield {"type": "final", "text": "Hello", "conversation_id": "", "images": []}
+
+    monkeypatch.setattr(rr.gemini_client, "generate_stream", fake_generate_stream)
+    with client.stream("POST", "/v1/responses",
+                       json={"model": "gemini-pro", "input": "hi", "stream": True},
+                       headers=_AUTH) as r:
+        body = "".join(r.iter_text())
+    assert "response.output_text.done" in body
+    assert "response.function_call_arguments.done" not in body  # no tools this turn
+    assert "response.completed" in body
+    assert "[DONE]" not in body
+
+
+def test_responses_stream_with_tools_buffers_and_emits_function_call_done(client, monkeypatch):
+    import app.routers.responses as rr
+
+    async def fake_generate(prompt, model, conversation_id="", attachments=None,
+                            gem_id=None, account_id=None):
+        return {"text": '{"status":"tool_use","tool_calls":[{"name":"run_shell","arguments":{"cmd":"ls"}}]}',
+               "conversation_id": "", "images": []}
+
+    monkeypatch.setattr(rr.gemini_client, "generate", fake_generate)
+    with client.stream("POST", "/v1/responses", json={
+        "model": "gemini-pro", "input": "list files", "stream": True,
+        "tools": [{"type": "function", "name": "run_shell", "description": "d", "parameters": {}}],
+    }, headers=_AUTH) as r:
+        body = "".join(r.iter_text())
+    assert "response.function_call_arguments.done" in body
+    assert "response.completed" in body
