@@ -88,6 +88,27 @@ def test_responses_stream_emits_output_text_done_event(gem_client, monkeypatch):
     assert "[DONE]" not in body
 
 
+def test_responses_routes_unknown_gemini_model_to_thirdparty(gem_client, monkeypatch):
+    """端到端：模型不是 Gemini 模型时，路由把请求转给第三方分发适配层，
+    并把 dispatch_thirdparty_responses 的返回值（此处为 JSONResponse）原样透传给客户端。
+    用 gem_client（已装好 app.state.model_mapping/gem_mapping）而非裸 client，
+    因为要真正跑到 resolved_model 判断那一段（裸 client 不跑 lifespan，state 里没有这些对象）。"""
+    from fastapi.responses import JSONResponse
+
+    async def fake_dispatch(request, resolved_model, messages_raw, tools_raw, tool_choice,
+                            stream, request_params):
+        assert resolved_model == "deepseek-chat"
+        assert stream is False
+        return JSONResponse(content={"object": "response", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "ok"}]}
+        ]})
+
+    monkeypatch.setattr("app.core.responses_thirdparty.dispatch_thirdparty_responses", fake_dispatch)
+    r = gem_client.post("/v1/responses", json={"model": "deepseek-chat", "input": "hi"}, headers=_AUTH)
+    assert r.status_code == 200
+    assert r.json()["output"][0]["content"][0]["text"] == "ok"
+
+
 def test_responses_stream_with_tools_buffers_and_emits_function_call_done(gem_client, monkeypatch):
     import app.routers.responses as rr
 
