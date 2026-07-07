@@ -92,8 +92,12 @@ async def dispatch_thirdparty_responses(request, resolved_model, messages_raw, t
     if not entries:
         return None
     if stream:
-        return await _dispatch_stream(request, resolved_model, messages_raw, tools_raw,
-                                      tool_choice, request_params, entries, pool)
+        return StreamingResponse(
+            _dispatch_stream(request, resolved_model, messages_raw, tools_raw,
+                             tool_choice, request_params, entries, pool),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     return await _dispatch_non_stream(request, resolved_model, messages_raw, tools_raw,
                                       tool_choice, request_params, entries, pool)
 

@@ -191,3 +191,46 @@ def test_stream_dispatch_converts_provider_sse_to_responses_events(monkeypatch):
     assert "response.output_text.done" in body
     assert "response.completed" in body
     assert "[DONE]" not in body
+
+
+def test_dispatch_thirdparty_responses_stream_returns_streaming_response(monkeypatch):
+    """回归测试：dispatch_thirdparty_responses(stream=True) 是真正的调用入口——
+    之前 _dispatch_stream 被改成 async generator 后，入口处仍 `await` 它，
+    导致每一个走第三方模型的流式请求都会 TypeError 崩溃。
+    这里必须走 dispatch_thirdparty_responses 本身（而不是直接调 _dispatch_stream），
+    并且要真的把 body_iterator 消费一遍，才能复现/覆盖这个 bug。"""
+    import app.core.responses_thirdparty as rt
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    async def _fake_body():
+        yield 'data: {"choices":[{"delta":{"content":"Bon"}}]}\n\n'
+        yield 'data: {"choices":[{"delta":{"content":"jour"}}]}\n\n'
+        yield 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        yield "data: [DONE]\n\n"
+
+    async def fake_open_stream(entry, messages, req):
+        return StreamingResponse(_fake_body(), media_type="text/event-stream"), None
+
+    monkeypatch.setattr(rt, "open_stream", fake_open_stream)
+
+    pool = _FakePool([_FakeEntry()])
+
+    class _Req:
+        app = type("A", (), {"state": type("S", (), {"api_key_pool": pool})()})()
+
+    async def _run():
+        result = await rt.dispatch_thirdparty_responses(
+            _Req(), "deepseek-chat", [{"role": "user", "content": "hi"}],
+            [], None, True, {},
+        )
+        assert isinstance(result, StreamingResponse)
+        frames = []
+        async for frame in result.body_iterator:
+            frames.append(frame)
+        return "".join(frames)
+
+    body = asyncio.run(_run())
+    assert "response.output_text.delta" in body
+    assert "response.completed" in body
+    assert pool.last_used == ["e1"]
