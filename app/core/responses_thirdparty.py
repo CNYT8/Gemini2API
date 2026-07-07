@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.core.api_forwarder import forward_to_provider, open_stream
+from app.core.fallback import openai_data_is_empty
 from app.models.openai import ChatRequest, ChatMessage, ToolDef, ToolFunction
 from app.core.responses_protocol import build_responses_object, new_response_id, ResponsesStreamEncoder
 
@@ -58,19 +59,25 @@ def _chat_response_to_responses_object(chat_body: dict, model: str, request_para
 async def _dispatch_non_stream(request, resolved_model, messages_raw, tools_raw, tool_choice,
                                request_params, entries, pool):
     chat_req = ChatRequest(model=resolved_model, messages=_to_chat_messages(messages_raw),
-                          stream=False, tools=_to_tool_defs(tools_raw), tool_choice=tool_choice)
+                          stream=False, tools=_to_tool_defs(tools_raw), tool_choice=tool_choice,
+                          temperature=request_params.get("temperature"),
+                          max_tokens=request_params.get("max_output_tokens"))
     cooldown = settings.thirdparty_failover_cooldown
     last_resp = None
     for entry in entries:
         resp = await forward_to_provider(entry, messages_raw, chat_req)
         if isinstance(resp, JSONResponse) and getattr(resp, "status_code", 200) < 400:
-            pool.update_last_used(entry.id)
             body = resp.body
             if isinstance(body, (bytes, bytearray)):
                 body = body.decode("utf-8", "replace")
-            chat_body = json.loads(body)
-            obj = _chat_response_to_responses_object(chat_body, resolved_model, request_params)
-            return JSONResponse(content=obj)
+            try:
+                chat_body = json.loads(body)
+            except Exception:
+                chat_body = None
+            if chat_body is not None and not openai_data_is_empty(chat_body):
+                pool.update_last_used(entry.id)
+                obj = _chat_response_to_responses_object(chat_body, resolved_model, request_params)
+                return JSONResponse(content=obj)
         last_resp = resp
         pool.mark_unhealthy(entry.id, cooldown)
     return last_resp  # 全部失败：把最后一个第三方错误响应原样返回

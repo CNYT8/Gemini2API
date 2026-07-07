@@ -64,3 +64,84 @@ def test_non_stream_dispatch_converts_chat_response_to_responses_object(monkeypa
     assert body["output"][0]["type"] == "message"
     assert body["output"][0]["content"][0]["text"] == "Bonjour"
     assert body["store"] is True
+
+
+def test_non_stream_dispatch_fails_over_when_first_candidate_body_is_empty(monkeypatch):
+    """第一家 200 但 body 为空内容（无 content/tool_calls）—— 视为失败，切到第二家，
+    而不是把空结果当成功直接返回。"""
+    import app.core.responses_thirdparty as rt
+    from fastapi.responses import JSONResponse
+
+    empty_chat_body = {
+        "id": "chatcmpl-empty",
+        "choices": [{"message": {"role": "assistant", "content": ""}, "finish_reason": "stop"}],
+    }
+    good_chat_body = {
+        "id": "chatcmpl-good",
+        "choices": [{"message": {"role": "assistant", "content": "Bonjour"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+    }
+
+    calls = []
+
+    async def fake_forward(entry, messages, req):
+        calls.append(entry.id)
+        if entry.id == "e1":
+            return JSONResponse(content=empty_chat_body)
+        return JSONResponse(content=good_chat_body)
+
+    monkeypatch.setattr(rt, "forward_to_provider", fake_forward)
+
+    class _FakeEntry2:
+        id = "e2"
+        model = "deepseek-chat"
+        provider = "openai"
+
+    pool = _FakePool([_FakeEntry(), _FakeEntry2()])
+
+    class _Req:
+        app = type("A", (), {"state": type("S", (), {"api_key_pool": pool})()})()
+
+    import asyncio
+    result = asyncio.run(rt.dispatch_thirdparty_responses(
+        _Req(), "deepseek-chat", [{"role": "user", "content": "say hi in french"}],
+        [], None, False, {},
+    ))
+    assert isinstance(result, JSONResponse)
+    import json as _json
+    body = _json.loads(result.body)
+    assert body["output"][0]["content"][0]["text"] == "Bonjour"
+    assert calls == ["e1", "e2"]
+    assert pool.marked_unhealthy == ["e1"]
+    assert pool.last_used == ["e2"]
+
+
+def test_non_stream_dispatch_forwards_temperature_and_max_tokens(monkeypatch):
+    import app.core.responses_thirdparty as rt
+    from fastapi.responses import JSONResponse
+
+    chat_body = {
+        "id": "chatcmpl-x",
+        "choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
+    }
+
+    captured = {}
+
+    async def fake_forward(entry, messages, req):
+        captured["req"] = req
+        return JSONResponse(content=chat_body)
+
+    monkeypatch.setattr(rt, "forward_to_provider", fake_forward)
+
+    class _Req:
+        app = type("A", (), {"state": type("S", (), {"api_key_pool": _FakePool([_FakeEntry()])})()})()
+
+    import asyncio
+    result = asyncio.run(rt.dispatch_thirdparty_responses(
+        _Req(), "deepseek-chat", [{"role": "user", "content": "hi"}],
+        [], None, False, {"temperature": 0.3, "max_output_tokens": 500},
+    ))
+    assert isinstance(result, JSONResponse)
+    req = captured["req"]
+    assert req.temperature == 0.3
+    assert req.max_tokens == 500
