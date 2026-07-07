@@ -3,7 +3,7 @@ import json
 _AUTH = {"Authorization": "Bearer sk-test-key"}
 
 
-def test_responses_non_stream_text_reply(client, monkeypatch):
+def test_responses_non_stream_text_reply(gem_client, monkeypatch):
     import app.routers.responses as rr
 
     async def fake_generate(prompt, model, conversation_id="", attachments=None,
@@ -12,7 +12,7 @@ def test_responses_non_stream_text_reply(client, monkeypatch):
         return {"text": "Hello human", "conversation_id": "", "images": []}
 
     monkeypatch.setattr(rr.gemini_client, "generate", fake_generate)
-    r = client.post("/v1/responses", json={"model": "gemini-pro", "input": "hi"}, headers=_AUTH)
+    r = gem_client.post("/v1/responses", json={"model": "gemini-pro", "input": "hi"}, headers=_AUTH)
     assert r.status_code == 200
     body = r.json()
     assert body["object"] == "response"
@@ -45,7 +45,7 @@ def test_responses_missing_input_is_400(client):
     assert r.status_code == 400
 
 
-def test_responses_with_tool_call_returns_function_call_item(client, monkeypatch):
+def test_responses_with_tool_call_returns_function_call_item(gem_client, monkeypatch):
     import app.routers.responses as rr
 
     async def fake_generate(prompt, model, conversation_id="", attachments=None,
@@ -55,7 +55,7 @@ def test_responses_with_tool_call_returns_function_call_item(client, monkeypatch
                "conversation_id": "", "images": []}
 
     monkeypatch.setattr(rr.gemini_client, "generate", fake_generate)
-    r = client.post("/v1/responses", json={
+    r = gem_client.post("/v1/responses", json={
         "model": "gemini-pro", "input": "list files",
         "tools": [{"type": "function", "name": "run_shell", "description": "run a shell cmd",
                   "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}}}],

@@ -89,10 +89,8 @@ async def create_response(request: Request):
     if not any(m.get("role") == "user" for m in messages_raw):
         return _error(400, "input must contain at least one user message", param="input")
 
-    # getattr 防御：与下面 gem_mapping 一致——测试环境（bare `client` fixture）不跑 lifespan，
-    # app.state.model_mapping 不存在；生产环境 lifespan 恒会设置，行为不变（同 openai.py 用法）。
-    model_mapping = getattr(request.app.state, "model_mapping", None)
-    resolved_model = model_mapping.resolve(model) if model_mapping else model
+    model_mapping = request.app.state.model_mapping
+    resolved_model = model_mapping.resolve(model)
     gem_mapping = getattr(request.app.state, "gem_mapping", None)
     gem_id = None
     gem_account_id = None
