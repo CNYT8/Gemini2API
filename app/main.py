@@ -20,6 +20,7 @@ from app.core.usage_stats import UsageStatsStore
 from app.core.usage_timer import snapshot_loop
 from app.core.log_store import LogStore, create_log_record
 from app.routers import openai, claude, gemini, research
+from app.routers import responses as responses_router
 from app.routers import admin
 from app.routers import logs as logs_router
 from app.routers import usage_stats as usage_stats_router
@@ -279,6 +280,9 @@ async def log_capture_middleware(request: Request, call_next):
 
 app.include_router(openai.router, prefix="/openai/v1")
 app.include_router(openai.router, prefix="/v1")  # 标准 OpenAI 路径，兼容 OpenClaw 等客户端
+
+app.include_router(responses_router.router, prefix="/openai/v1")
+app.include_router(responses_router.router, prefix="/v1")
 
 # Claude：完整端点挂 /claude/v1；裸 /v1 仅暴露对话入口（messages），
 # 模型列表 models_router 不挂裸 /v1，避免 /v1/models 与 OpenAI 撞车
