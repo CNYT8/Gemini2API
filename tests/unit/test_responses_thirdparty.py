@@ -145,3 +145,49 @@ def test_non_stream_dispatch_forwards_temperature_and_max_tokens(monkeypatch):
     req = captured["req"]
     assert req.temperature == 0.3
     assert req.max_tokens == 500
+
+
+def test_stream_dispatch_converts_provider_sse_to_responses_events(monkeypatch):
+    import app.core.responses_thirdparty as rt
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    async def _fake_body():
+        yield 'data: {"choices":[{"delta":{"content":"Bon"}}]}\n\n'
+        yield 'data: {"choices":[{"delta":{"content":"jour"}}]}\n\n'
+        yield 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        yield "data: [DONE]\n\n"
+
+    async def fake_open_stream(entry, messages, req):
+        return StreamingResponse(_fake_body(), media_type="text/event-stream"), None
+
+    class _FakeEntry:
+        id = "e1"
+
+    class _FakePool:
+        def update_last_used(self, entry_id):
+            pass
+        def mark_unhealthy(self, entry_id, cooldown):
+            pass
+
+    # patch the module-level open_stream reference used inside responses_thirdparty
+    # (setattr on the rt module, so pytest's monkeypatch auto-restores after the test)
+    monkeypatch.setattr(rt, "open_stream", fake_open_stream)
+
+    async def _collect():
+        gen = rt._dispatch_stream(
+            request=None, resolved_model="deepseek-chat",
+            messages_raw=[{"role": "user", "content": "hi"}], tools_raw=[], tool_choice=None,
+            request_params={}, entries=[_FakeEntry()], pool=_FakePool(),
+        )
+        out = []
+        async for frame in gen:
+            out.append(frame)
+        return out
+
+    frames = asyncio.run(_collect())
+    body = "".join(frames)
+    assert "response.output_text.delta" in body
+    assert "response.output_text.done" in body
+    assert "response.completed" in body
+    assert "[DONE]" not in body

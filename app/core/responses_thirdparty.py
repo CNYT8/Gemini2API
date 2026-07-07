@@ -100,4 +100,64 @@ async def dispatch_thirdparty_responses(request, resolved_model, messages_raw, t
 
 async def _dispatch_stream(request, resolved_model, messages_raw, tools_raw, tool_choice,
                            request_params, entries, pool):
-    raise NotImplementedError("implemented in Task 7")
+    chat_req = ChatRequest(model=resolved_model, messages=_to_chat_messages(messages_raw),
+                          stream=True, tools=_to_tool_defs(tools_raw), tool_choice=tool_choice,
+                          temperature=request_params.get("temperature"),
+                          max_tokens=request_params.get("max_output_tokens"))
+    response_id = new_response_id()
+    enc = ResponsesStreamEncoder(response_id, resolved_model, request_params)
+    yield enc.created()
+    yield enc.in_progress()
+
+    cooldown = settings.thirdparty_failover_cooldown
+    stream_resp = None
+    used_entry = None
+    for entry in entries:
+        resp, err = await open_stream(entry, messages_raw, chat_req)
+        if resp is not None:
+            stream_resp = resp
+            used_entry = entry
+            break
+        pool.mark_unhealthy(entry.id, cooldown)
+
+    if stream_resp is None:
+        yield enc.failed("all third-party candidates failed to open a stream")
+        return
+    pool.update_last_used(used_entry.id)
+
+    msg_id = f"msg_{new_response_id()}"
+    started = False
+    full_text = ""
+    buf = ""
+    async for raw in stream_resp.body_iterator:
+        buf += raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
+        while "\n\n" in buf:
+            frame, buf = buf.split("\n\n", 1)
+            line = frame.strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[len("data:"):].strip()
+            if payload == "[DONE]":
+                continue
+            try:
+                chunk = json.loads(payload)
+            except Exception:
+                continue
+            delta = ((chunk.get("choices") or [{}])[0].get("delta") or {})
+            text_piece = delta.get("content") or ""
+            if text_piece:
+                if not started:
+                    for frame_out in enc.text_message_start(msg_id, 0):
+                        yield frame_out
+                    started = True
+                full_text += text_piece
+                yield enc.text_delta(msg_id, 0, text_piece)
+
+    if not started:
+        for frame_out in enc.text_message_start(msg_id, 0):
+            yield frame_out
+    for frame_out in enc.text_message_end(msg_id, 0, full_text):
+        yield frame_out
+    output = [{"id": msg_id, "type": "message", "role": "assistant", "status": "completed",
+              "content": [{"type": "output_text", "text": full_text, "annotations": []}]}]
+    yield enc.completed(output, usage={"input_tokens": 0, "output_tokens": 0})
