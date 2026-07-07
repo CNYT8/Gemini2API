@@ -61,3 +61,42 @@ def test_output_text_content_part_maps_to_text():
         ]},
     ])
     assert msgs == [{"role": "assistant", "content": [{"type": "text", "text": "previous reply"}]}]
+
+
+from app.core.responses_protocol import build_responses_object, new_response_id
+
+
+def test_new_response_id_has_resp_prefix():
+    rid = new_response_id()
+    assert rid.startswith("resp_") and len(rid) > len("resp_")
+
+
+def test_build_responses_object_basic_shape():
+    output = [{"id": "msg_1", "type": "message", "role": "assistant", "status": "completed",
+               "content": [{"type": "output_text", "text": "hi", "annotations": []}]}]
+    obj = build_responses_object(
+        model="gemini-pro", status="completed", output=output,
+        request_params={"tools": [], "tool_choice": "auto", "store": True},
+        usage={"input_tokens": 3, "output_tokens": 2},
+    )
+    assert obj["object"] == "response"
+    assert obj["id"].startswith("resp_")
+    assert obj["status"] == "completed"
+    assert obj["model"] == "gemini-pro"
+    assert obj["output"] == output
+    assert obj["tools"] == []
+    assert obj["tool_choice"] == "auto"
+    assert obj["store"] is True
+    assert obj["usage"]["input_tokens"] == 3
+    assert obj["usage"]["input_tokens_details"] == {"cached_tokens": 0}
+    assert obj["usage"]["output_tokens_details"] == {"reasoning_tokens": 0}
+    assert obj["usage"]["total_tokens"] == 5
+    assert obj["error"] is None
+    assert "created_at" in obj
+
+
+def test_build_responses_object_omits_unset_request_params():
+    obj = build_responses_object(model="gemini-pro", status="completed", output=[],
+                                 request_params={}, usage={"input_tokens": 0, "output_tokens": 0})
+    assert "tools" not in obj
+    assert "tool_choice" not in obj
