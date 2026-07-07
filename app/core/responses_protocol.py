@@ -126,8 +126,9 @@ class ResponsesStreamEncoder:
         self._seq = 0
 
     def _send(self, event_type: str, payload: dict) -> str:
-        body = {"type": event_type, "sequence_number": self._seq}
-        body.update(payload)
+        body = dict(payload)
+        body["type"] = event_type
+        body["sequence_number"] = self._seq
         self._seq += 1
         return f"event: {event_type}\ndata: {json.dumps(body)}\n\n"
 

@@ -159,3 +159,25 @@ def test_no_done_sentinel_anywhere():
     frame = enc.completed(output=[], usage={"input_tokens": 1, "output_tokens": 1})
     assert "[DONE]" not in frame
     assert not hasattr(enc, "done_sentinel")
+
+
+def test_no_done_sentinel_in_any_encoder_output():
+    enc = ResponsesStreamEncoder("resp_1", "gemini-pro", {})
+    frames = []
+    frames.append(enc.created())
+    frames.append(enc.in_progress())
+    frames += enc.text_message_start("msg_1", 0)
+    frames.append(enc.text_delta("msg_1", 0, "hi"))
+    frames += enc.text_message_end("msg_1", 0, "hi")
+    frames += enc.function_call("fc_1", 1, "call_1", "tool", "{}")
+    frames.append(enc.completed(output=[], usage={"input_tokens": 0, "output_tokens": 0}))
+    frames.append(enc.failed("boom"))
+    for frame in frames:
+        assert "[DONE]" not in frame
+
+
+def test_send_type_field_cannot_be_overridden_by_payload():
+    enc = ResponsesStreamEncoder("resp_1", "gemini-pro", {})
+    frame = enc._send("response.created", {"type": "some.other.type", "response": {}})
+    _, data = _parse_frame(frame)
+    assert data["type"] == "response.created"
