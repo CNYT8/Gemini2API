@@ -88,6 +88,26 @@ def test_responses_stream_emits_output_text_done_event(gem_client, monkeypatch):
     assert "[DONE]" not in body
 
 
+def test_responses_stream_embeds_generated_images_as_markdown(gem_client, monkeypatch):
+    """真流式路径（无工具/附件）也不能丢图：final 事件里的 images 要嵌入 full_text 再收尾。"""
+    import app.routers.responses as rr
+
+    async def fake_generate_stream(prompt, model, conversation_id="", attachments=None,
+                                   gem_id=None, account_id=None):
+        yield {"type": "delta", "text": "Here"}
+        yield {"type": "final", "text": "Here", "conversation_id": "",
+              "images": [{"id": "img-999"}]}
+
+    monkeypatch.setattr(rr.gemini_client, "generate_stream", fake_generate_stream)
+    with gem_client.stream("POST", "/v1/responses",
+                       json={"model": "gemini-pro", "input": "draw a dog", "stream": True},
+                       headers=_AUTH) as r:
+        body = "".join(r.iter_text())
+    assert "![generated image](" in body
+    assert "img-999" in body
+    assert "response.output_text.done" in body
+
+
 def test_responses_routes_unknown_gemini_model_to_thirdparty(gem_client, monkeypatch):
     """端到端：模型不是 Gemini 模型时，路由把请求转给第三方分发适配层，
     并把 dispatch_thirdparty_responses 的返回值（此处为 JSONResponse）原样透传给客户端。
@@ -107,6 +127,26 @@ def test_responses_routes_unknown_gemini_model_to_thirdparty(gem_client, monkeyp
     r = gem_client.post("/v1/responses", json={"model": "deepseek-chat", "input": "hi"}, headers=_AUTH)
     assert r.status_code == 200
     assert r.json()["output"][0]["content"][0]["text"] == "ok"
+
+
+def test_responses_non_stream_embeds_generated_images_as_markdown(gem_client, monkeypatch):
+    """Gemini 生图（result.images）不能被 /v1/responses 静默丢弃：沿用 chat/completions 的
+    既有做法，Markdown 图片链接嵌入文字内容（design doc §1/§4.3）。"""
+    import app.routers.responses as rr
+
+    async def fake_generate(prompt, model, conversation_id="", attachments=None,
+                            gem_id=None, account_id=None):
+        return {"text": "here you go", "conversation_id": "",
+               "images": [{"id": "img-123"}]}
+
+    monkeypatch.setattr(rr.gemini_client, "generate", fake_generate)
+    r = gem_client.post("/v1/responses", json={"model": "gemini-pro", "input": "draw a cat"},
+                        headers=_AUTH)
+    assert r.status_code == 200
+    text = r.json()["output"][0]["content"][0]["text"]
+    assert "![generated image](" in text
+    assert "img-123" in text
+    assert "here you go" in text
 
 
 def test_responses_stream_with_tools_buffers_and_emits_function_call_done(gem_client, monkeypatch):

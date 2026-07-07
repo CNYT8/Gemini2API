@@ -38,7 +38,7 @@ def _chat_response_to_responses_object(chat_body: dict, model: str, request_para
         for tc in tool_calls:
             func = tc.get("function", {})
             output.append({
-                "id": f"fc_{tc.get('id', '')}" or "fc_unknown", "type": "function_call",
+                "id": f"fc_{tc.get('id', '')}", "type": "function_call",
                 "status": "completed", "call_id": tc.get("id", ""), "name": func.get("name", ""),
                 "arguments": func.get("arguments", "{}"),
             })

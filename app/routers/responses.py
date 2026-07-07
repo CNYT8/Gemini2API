@@ -12,6 +12,7 @@ from app.core.gemini_client import GEMINI_MODELS, _resolve_model
 from app.core.responses_protocol import (
     parse_responses_input, build_responses_object, new_response_id, ResponsesStreamEncoder,
 )
+from app.routers.openai import _images_to_markdown
 from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tokens
 from app.utils.prompt import build_prompt_from_messages, extract_attachments
 
@@ -121,7 +122,7 @@ async def create_response(request: Request):
 
     if stream:
         return StreamingResponse(
-            _stream_gemini_response(prompt, resolved_model, has_tools, attachments,
+            _stream_gemini_response(request, prompt, resolved_model, has_tools, attachments,
                                     gem_id, gem_account_id, request_params),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -134,6 +135,11 @@ async def create_response(request: Request):
         return _error(502, str(e), error_type="api_error")
 
     text = result.get("text", "")
+    # AI 生成图片：沿用 chat/completions 的既有做法，Markdown 图片链接嵌入文字内容（design §4.3）
+    gen_images = result.get("images") or []
+    if gen_images:
+        md = _images_to_markdown(gen_images, request)
+        text = (md + "\n" + text.strip()) if text.strip() else md
     output, _ = _build_output_items(text, has_tools)
     usage = {"input_tokens": estimate_tokens(prompt), "output_tokens": estimate_tokens(text)}
     obj = build_responses_object(model=resolved_model, status="completed", output=output,
@@ -142,8 +148,8 @@ async def create_response(request: Request):
     return JSONResponse(content=obj)
 
 
-async def _stream_gemini_response(prompt, model, has_tools, attachments, gem_id, gem_account_id,
-                                  request_params):
+async def _stream_gemini_response(request, prompt, model, has_tools, attachments, gem_id,
+                                  gem_account_id, request_params):
     response_id = new_response_id()
     enc = ResponsesStreamEncoder(response_id, model, request_params)
     yield enc.created()
@@ -158,6 +164,10 @@ async def _stream_gemini_response(prompt, model, has_tools, attachments, gem_id,
             yield enc.failed(str(e))
             return
         text = result.get("text", "")
+        gen_images = result.get("images") or []
+        if gen_images:
+            md = _images_to_markdown(gen_images, request)
+            text = (md + "\n" + text.strip()) if text.strip() else md
         output, _ = _build_output_items(text, has_tools)
         for idx, item in enumerate(output):
             if item["type"] == "function_call":
@@ -180,6 +190,7 @@ async def _stream_gemini_response(prompt, model, has_tools, attachments, gem_id,
     for frame in enc.text_message_start(msg_id, 0):
         yield frame
     full_text = ""
+    final_images = []
     try:
         async for evt in gemini_client.generate_stream(prompt, model, "", attachments,
                                                         gem_id=gem_id, account_id=gem_account_id):
@@ -195,9 +206,14 @@ async def _stream_gemini_response(prompt, model, has_tools, attachments, gem_id,
                     if tail:
                         yield enc.text_delta(msg_id, 0, tail)
                 full_text = final_text
+                final_images = evt.get("images") or []
     except Exception as e:
         yield enc.failed(str(e))
         return
+
+    if final_images:
+        md = _images_to_markdown(final_images, request)
+        full_text = (md + "\n" + full_text.strip()) if full_text.strip() else md
 
     for frame in enc.text_message_end(msg_id, 0, full_text):
         yield frame
