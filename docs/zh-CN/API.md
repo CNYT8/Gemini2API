@@ -272,6 +272,136 @@ curl -X POST http://localhost:5918/openai/v1/chat/completions \
   }'
 ```
 
+### POST /openai/v1/responses
+
+OpenAI Responses API。为需要新版 Responses 协议（而非 Chat Completions）的客户端提供支持——例如 **Codex CLI**，它在 2026 年 2 月起砍掉了对 Chat Completions 的支持，要把 Codex CLI 接到 gemini2api 就得靠这个接口。支持文本对话、流式输出、工具（函数）调用，Gemini 模型和 API 管理里配置的第三方模型都能用。
+
+**请求**：
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "1+1等于几？",
+    "stream": false
+  }'
+```
+
+**请求体**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `model` | string | 是 | 模型名称，如 `gemini-flash`，或 API 管理里配置的第三方模型 |
+| `input` | string 或 array | 是 | 字符串（等同一条 user 消息的简写），或输入条目数组（见下） |
+| `instructions` | string | 否 | 系统/开发者前置说明，加在对话最前面 |
+| `stream` | boolean | 否 | 是否流式返回，默认 false |
+| `tools` | array | 否 | 函数调用工具定义，**扁平格式**：`{"type":"function","name","description","parameters"}`（注意：跟 Chat Completions 的嵌套格式 `{"type":"function","function":{...}}` 不一样） |
+| `tool_choice` | string 或 object | 否 | `auto`、`none`、`required`，或 `{"type":"function","name":"..."}` 指定必须调用某个工具 |
+| `temperature` | number | 否 | 随机性（会透传给第三方模型；Gemini 路径不生效） |
+| `max_output_tokens` | number | 否 | 最大输出长度（会透传给第三方模型；Gemini 路径不生效） |
+
+**`input` 数组条目类型**：
+- `{"type":"message","role":"user"|"assistant"|"system","content":[...]}` —— 内容块：`{"type":"input_text","text":...}`、`{"type":"input_image","image_url":"..."}`、`{"type":"output_text","text":...}`
+- `{"type":"function_call","call_id","name","arguments"}` —— 历史里助手调用工具的那一轮（多轮续聊需要客户端自己重发完整历史）
+- `{"type":"function_call_output","call_id","output"}`（或 `"tool_result"`）—— 客户端回传的工具执行结果
+
+**明确不支持（会报错，不会假装支持）**：`previous_response_id`——本服务不保存服务端对话状态，传了这个字段会返回 400 `invalid_request_error`，而不是悄悄忽略。请每次请求都在 `input` 里带上完整对话历史（Codex CLI 本身就是这么做的）。
+
+**响应（非流式）**：
+```json
+{
+  "id": "resp_xxx",
+  "object": "response",
+  "created_at": 1715970000,
+  "status": "completed",
+  "model": "gemini-flash",
+  "output": [
+    {
+      "id": "msg_xxx",
+      "type": "message",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {"type": "output_text", "text": "1+1等于2", "annotations": []}
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 5,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 15
+  },
+  "previous_response_id": null,
+  "instructions": null,
+  "error": null
+}
+```
+
+**响应（流式）**：严格按官方协议顺序发送带命名的 SSE 事件，每个事件都带递增的 `sequence_number`。**没有** `data: [DONE]` 结尾标记（那是 Chat Completions 的老约定）——完成信号是 `response.completed`（失败是 `response.failed`）：
+
+```
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{...}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,...}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,...}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":3,...}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":4,"delta":"1"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":5,"text":"1+1等于2"}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":6,...}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":7,...}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":8,"response":{...}}
+```
+
+工具调用场景下，`response.output_item.added`（类型 `function_call`）之后跟的是 `response.function_call_arguments.delta` / `response.function_call_arguments.done` / `response.output_item.done`，而不是上面的文本事件。
+
+**工具调用示例**：
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "查一下巴黎的天气",
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "获取指定城市的天气",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {"type": "string"}
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  }'
+```
+响应 `output` 里会含有一个 `function_call` 条目：
+```json
+{"id": "fc_xxx", "type": "function_call", "status": "completed", "call_id": "call_xxx", "name": "get_weather", "arguments": "{\"city\": \"巴黎\"}"}
+```
+
 ### POST /openai/v1/images/generations
 
 AI 生成图片：靠 prompt 触发生成，返回 b64_json 格式的图片。也可使用裸路径 `/v1/images/generations`。

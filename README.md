@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Docker-20.10+-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/Chrome%20%7C%20Edge-Latest-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Browser">
   <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/version-v1.6.20-success?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-v1.6.26-success?style=flat-square" alt="Version">
 </p>
 
 <p>
@@ -59,6 +59,7 @@
 
 | 日期 | 更新内容 |
 |------|----------|
+| 2026-07-07 12:48:37 | v1.6.26 - 🔌 新增 OpenAI Responses API 支持（`/v1/responses` 或 `/openai/v1/responses`）：让需要新版 Responses 协议的客户端（如 2026 年 2 月起砍掉 Chat Completions 支持的 Codex CLI）能正常接入 gemini2api——支持文本对话、流式输出、工具调用，Gemini 模型和 API 管理配置的第三方模型均可使用；流式事件严格遵循官方协议顺序（修正了参考实现已知会漏发的两个关键事件：`response.output_text.done` / `response.function_call_arguments.done`）；不支持服务端多轮状态（`previous_response_id` 会明确报错而非假装续上），因为 Codex CLI 本身会重发完整对话历史 |
 | 2026-06-23 00:00:00 | v1.6.25 - 🎚️ API 管理页 Gemini 兜底一键开关：即时开/关「Gemini→第三方兜底」并持久化（原来只能改 .env 且需重启）；开关只控制兜底，第三方模型照常直连调用、照常在 /v1/models |
 | 2026-06-22 20:06:08 | v1.6.24 - 🧩 自定义 Gem 支持：管理面板新增「Gem 管理」页，可列出/新建/修改/删除账号下你自己创建的自定义 Gem，并把任意 Gem「暴露为模型名」——任何 OpenAI 兼容客户端用该模型名调用即以该 Gem 人设对话；Gem 绑定所属账号、调用只走绑定账号不轮询；删 Gem 时自动清理对应模型映射 |
 | 2026-06-22 14:21:48 | v1.6.23 - 🧠 第三方「每模型思考(reasoning_effort)」设置：API 管理里可为每条第三方模型配置思考等级（默认不设/none/low/medium/high/自定义），转发时自动注入——OpenAI 兼容上游注入 reasoning_effort，Anthropic 上游换算成 thinking(budget_tokens) 并把响应思考映射回 reasoning_content；默认不设时零回归，不支持思考的模型留默认即可；同时修复"仅返回思考内容(正文暂空)被误判为空响应"的问题 |
@@ -476,6 +477,7 @@ curl -X POST http://localhost:5918/v1/images/generations \
 |------|------|------|
 | GET | `/models` | 可用模型列表 |
 | POST | `/chat/completions` | 对话补全（支持流式 + 工具调用 + 生图） |
+| POST | `/responses` | OpenAI Responses API（文本/流式/工具调用，Codex CLI 等新客户端使用） |
 | POST | `/images/generations` | AI 生成图片（返回 b64_json） |
 
 ### Claude 兼容（`/claude/v1`；对话入口同时挂裸 `/v1`）

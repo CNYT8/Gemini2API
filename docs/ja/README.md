@@ -58,6 +58,7 @@
 
 | 日付 | 更新内容 |
 |------|----------|
+| 2026-07-07 12:48:37 | v1.6.26 - 🔌 新規 OpenAI Responses API 対応（`/v1/responses` または `/openai/v1/responses`）：Chat Completions ではなく新しい Responses プロトコルを必要とするクライアント（例: Codex CLI。2026 年 2 月に Chat Completions のサポートを終了）が gemini2api を利用できるように——テキストチャット、ストリーミング、関数/ツール呼び出しに対応、Gemini モデルと API 管理で設定したサードパーティモデルの両方で利用可；ストリーミングイベントは公式プロトコルの順序を厳密に遵守（既知のリファレンス実装が省略している 2 つの終端イベント response.output_text.done / response.function_call_arguments.done を修正）；サーバー側のマルチターン状態は保持せず——previous_response_id は継続性を黙って偽装せず明確なエラーを返す（Codex CLI などのクライアントは会話履歴全体を自ら再送するため） |
 | 2026-06-23 00:00:00 | v1.6.25 - 🎚️ API 管理ページの Gemini フォールバックトグル：「Gemini→第三者フォールバック」をワンクリックで即時オン/オフ・永続化（以前は .env 編集＋再起動が必要）；トグルはフォールバックのみ制御し、第三者モデルへの直接呼び出しと /v1/models への表示は常に維持 |
 | 2026-06-22 20:06:08 | v1.6.24 - 🧩 カスタム Gem サポート：管理パネルに「Gem 管理」ページを新設し、アカウント配下の自作 Gem を一覧/作成/編集/削除可能；任意の Gem を「モデル名として公開」することで、OpenAI 互換クライアントがそのモデル名で呼び出せば対応 Gem のペルソナで対話；Gem は所属アカウントに紐付けられ呼び出しは紐付きアカウントのみ（ラウンドロビンなし）；Gem 削除時にモデル名マッピングを自動削除 |
 | 2026-06-22 14:21:48 | v1.6.23 - 🧠 サードパーティのモデル別「思考(reasoning_effort)」設定：API 管理で各サードパーティモデルに思考レベルを設定可能（未設定/none/low/medium/high/カスタム）、転送時に自動注入——OpenAI 互換アップストリームには reasoning_effort、Anthropic には thinking(budget_tokens) に換算しレスポンスの思考を reasoning_content にマッピング；未設定時は後方互換、思考非対応モデルは未設定のままで可；「思考のみ(本文が一時的に空)のレスポンスを空と誤判定」も修正 |
@@ -400,6 +401,7 @@ response = client.chat.completions.create(
 |---------|--------------|------|
 | GET | `/models` | 利用可能モデルリスト |
 | POST | `/chat/completions` | チャット補完（ストリーミング + ツール呼び出し） |
+| POST | `/responses` | OpenAI Responses API（テキスト／ストリーミング／ツール呼び出し。Codex CLI など新しいクライアントが使用） |
 
 ### Claude 互換（`/claude/v1`）
 

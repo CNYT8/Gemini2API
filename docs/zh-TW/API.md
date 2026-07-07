@@ -169,6 +169,136 @@ data: {"choices":[{"delta":{"content":"好"},"index":0}]}
 data: [DONE]
 ```
 
+### POST /responses
+
+OpenAI Responses API。為需要新版 Responses 協議（而非 Chat Completions）的客戶端提供支援——例如 **Codex CLI**，它在 2026 年 2 月起砍掉了對 Chat Completions 的支援，要把 Codex CLI 接到 gemini2api 就得靠這個介面。支援文字對話、流式輸出、工具（函數）呼叫，Gemini 模型和 API 管理裡設定的第三方模型都能用。
+
+**請求**：
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "1+1等於幾？",
+    "stream": false
+  }'
+```
+
+**請求體**：
+
+| 參數 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| `model` | string | ✅ | 模型名稱，如 `gemini-flash`，或 API 管理裡設定的第三方模型 |
+| `input` | string 或 array | ✅ | 字串（等同一條 user 訊息的簡寫），或輸入條目陣列（見下） |
+| `instructions` | string | ❌ | 系統/開發者前置說明，加在對話最前面 |
+| `stream` | boolean | ❌ | 是否流式回傳，預設 false |
+| `tools` | array | ❌ | 函數呼叫工具定義，**扁平格式**：`{"type":"function","name","description","parameters"}`（注意：跟 Chat Completions 的巢狀格式 `{"type":"function","function":{...}}` 不一樣） |
+| `tool_choice` | string 或 object | ❌ | `auto`、`none`、`required`，或 `{"type":"function","name":"..."}` 指定必須呼叫某個工具 |
+| `temperature` | number | ❌ | 隨機性（會透傳給第三方模型；Gemini 路徑不生效） |
+| `max_output_tokens` | number | ❌ | 最大輸出長度（會透傳給第三方模型；Gemini 路徑不生效） |
+
+**`input` 陣列條目類型**：
+- `{"type":"message","role":"user"|"assistant"|"system","content":[...]}` —— 內容區塊：`{"type":"input_text","text":...}`、`{"type":"input_image","image_url":"..."}`、`{"type":"output_text","text":...}`
+- `{"type":"function_call","call_id","name","arguments"}` —— 歷史裡助手呼叫工具的那一輪（多輪續聊需要客戶端自己重發完整歷史）
+- `{"type":"function_call_output","call_id","output"}`（或 `"tool_result"`）—— 客戶端回傳的工具執行結果
+
+**明確不支援（會報錯，不會假裝支援）**：`previous_response_id`——本服務不儲存伺服器端對話狀態，傳了這個欄位會回傳 400 `invalid_request_error`，而不是悄悄忽略。請每次請求都在 `input` 裡帶上完整對話歷史（Codex CLI 本身就是這麼做的）。
+
+**回應（非流式）**：
+```json
+{
+  "id": "resp_xxx",
+  "object": "response",
+  "created_at": 1715970000,
+  "status": "completed",
+  "model": "gemini-flash",
+  "output": [
+    {
+      "id": "msg_xxx",
+      "type": "message",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {"type": "output_text", "text": "1+1等於2", "annotations": []}
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 5,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 15
+  },
+  "previous_response_id": null,
+  "instructions": null,
+  "error": null
+}
+```
+
+**回應（流式）**：嚴格按官方協議順序發送帶命名的 SSE 事件，每個事件都帶遞增的 `sequence_number`。**沒有** `data: [DONE]` 結尾標記（那是 Chat Completions 的老約定）——完成訊號是 `response.completed`（失敗是 `response.failed`）：
+
+```
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{...}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,...}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,...}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":3,...}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":4,"delta":"1"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":5,"text":"1+1等於2"}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":6,...}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":7,...}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":8,"response":{...}}
+```
+
+工具呼叫場景下，`response.output_item.added`（類型 `function_call`）之後跟的是 `response.function_call_arguments.delta` / `response.function_call_arguments.done` / `response.output_item.done`，而不是上面的文字事件。
+
+**工具呼叫範例**：
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "查一下巴黎的天氣",
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "取得指定城市的天氣",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {"type": "string"}
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  }'
+```
+回應 `output` 裡會含有一個 `function_call` 條目：
+```json
+{"id": "fc_xxx", "type": "function_call", "status": "completed", "call_id": "call_xxx", "name": "get_weather", "arguments": "{\"city\": \"巴黎\"}"}
+```
+
 ### POST /images/generations
 
 AI 生成圖片。透過 `prompt` 觸發圖片生成，回傳 `b64_json` 格式的圖片資料。

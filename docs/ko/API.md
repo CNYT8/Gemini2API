@@ -215,6 +215,139 @@ curl http://localhost:5918/openai/v1/models \
 > agent 클라이언트(많은 동시 요청 발행)는 `gemini-flash`를 우선 사용하는 것이 좋습니다. 본 서비스의 스트리밍 인터페이스는 진정한 증분 스트리밍으로, 첫 글자가 생성되는 즉시 푸시를 시작합니다.
 
 
+### POST /openai/v1/responses
+
+OpenAI Responses API입니다. Chat Completions 대신 최신 Responses 프로토콜을 요구하는 클라이언트(예: 2026년 2월부로 Chat Completions 지원을 중단한 **Codex CLI** — Codex CLI를 gemini2api에 연결하려면 이 엔드포인트가 필요합니다)를 위해 추가되었습니다. 텍스트, 스트리밍, 함수/도구 호출을 지원하며, Gemini 모델과 API 관리에서 구성한 타사 모델 모두에서 사용할 수 있습니다.
+
+**요청**:
+
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "2+2는 얼마인가요?",
+    "stream": false
+  }'
+```
+
+**요청 본문**:
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| `model` | string | ✅ | 모델 ID (예: `gemini-flash`), 또는 API 관리에서 구성한 타사 모델 |
+| `input` | string 또는 array | ✅ | 단일 문자열(사용자 메시지 하나를 축약한 형태), 또는 입력 항목 배열(아래 참고) |
+| `instructions` | string | ❌ | 대화 앞에 붙는 시스템/개발자 사전 지시문 |
+| `stream` | boolean | ❌ | 스트리밍 활성화 여부 (기본값: false) |
+| `tools` | array | ❌ | 도구 호출용 함수 정의, **평면(flat) 구조**: `{"type":"function","name","description","parameters"}` (참고: Chat Completions의 중첩 구조 `{"type":"function","function":{...}}`와 다름) |
+| `tool_choice` | string 또는 object | ❌ | `auto`, `none`, `required`, 또는 특정 도구 호출을 강제하는 `{"type":"function","name":"..."}` |
+| `temperature` | number | ❌ | 무작위성 (타사 모델에는 전달됨; Gemini 경로에서는 적용되지 않음) |
+| `max_output_tokens` | number | ❌ | 최대 응답 길이 (타사 모델에는 전달됨; Gemini 경로에서는 적용되지 않음) |
+
+**`input` 배열 항목 유형**:
+- `{"type":"message","role":"user"|"assistant"|"system","content":[...]}` — 콘텐츠 파트: `{"type":"input_text","text":...}`, `{"type":"input_image","image_url":"..."}`, `{"type":"output_text","text":...}`
+- `{"type":"function_call","call_id","name","arguments"}` — 이전 어시스턴트의 도구 호출 턴 (멀티턴 히스토리는 직접 다시 전송)
+- `{"type":"function_call_output","call_id","output"}` (또는 `"tool_result"`) — 다시 전달하는 도구 실행 결과
+
+**지원하지 않음(조용히 무시하지 않고 명시적으로 오류 반환)**: `previous_response_id` — 이 서버는 서버 측 대화 상태를 유지하지 않습니다. 이 필드를 보내면 조용히 무시하는 대신 400 `invalid_request_error`를 반환합니다. 매 요청마다 전체 대화 내용을 `input`에 담아 다시 보내세요 (Codex CLI는 이미 이렇게 동작합니다).
+
+**응답 (비스트리밍)**:
+
+```json
+{
+  "id": "resp_xxx",
+  "object": "response",
+  "created_at": 1715970000,
+  "status": "completed",
+  "model": "gemini-flash",
+  "output": [
+    {
+      "id": "msg_xxx",
+      "type": "message",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {"type": "output_text", "text": "2 + 2 = 4", "annotations": []}
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 5,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 15
+  },
+  "previous_response_id": null,
+  "instructions": null,
+  "error": null
+}
+```
+
+**응답 (스트리밍)**: 각 이벤트마다 단조 증가하는 `sequence_number`를 포함하는, 공식 프로토콜 순서를 그대로 따르는 명명된 SSE 이벤트 시퀀스입니다. `data: [DONE]` 같은 종료 표시는 **없으며** (이는 Chat Completions 방식의 관례입니다) — 완료는 `response.completed`(실패 시 `response.failed`)로 알립니다:
+
+```
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{...}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,...}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,...}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":3,...}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":4,"delta":"2"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":5,"text":"2 + 2 = 4"}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":6,...}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":7,...}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":8,"response":{...}}
+```
+
+도구 호출의 경우, `response.output_item.added`(타입 `function_call`) 다음에는 위의 텍스트 이벤트 대신 `response.function_call_arguments.delta` / `response.function_call_arguments.done` / `response.output_item.done`이 이어집니다.
+
+**함수 호출 예시**:
+
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "파리 날씨가 어때요?",
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "도시의 날씨를 조회합니다",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {"type": "string"}
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  }'
+```
+응답 `output`에는 `function_call` 항목이 포함됩니다:
+```json
+{"id": "fc_xxx", "type": "function_call", "status": "completed", "call_id": "call_xxx", "name": "get_weather", "arguments": "{\"city\": \"파리\"}"}
+```
+
 ### POST /openai/v1/images/generations
 
 OpenAI 호환 AI 이미지 생성 API입니다. `prompt`로 이미지 생성을 트리거하며, Base64로 인코딩된 이미지를 `b64_json` 형식으로 반환합니다.

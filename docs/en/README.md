@@ -58,6 +58,7 @@
 
 | Date | Update |
 |------|--------|
+| 2026-07-07 12:48:37 | v1.6.26 - 🔌 New OpenAI Responses API support (`/v1/responses` or `/openai/v1/responses`): lets clients that require the newer Responses protocol (e.g. Codex CLI, which dropped Chat Completions support in Feb 2026) work with gemini2api — text chat, streaming, and function/tool calling, for both Gemini models and third-party models configured in API Management; streaming events strictly follow the official protocol order (fixing two terminal events a known reference implementation omits: `response.output_text.done` / `response.function_call_arguments.done`); no server-side multi-turn state — `previous_response_id` returns a clear error instead of silently faking continuity, since clients like Codex CLI resend the full conversation history themselves |
 | 2026-06-23 00:00:00 | v1.6.25 - 🎚️ Gemini fallback toggle in API Management: one-click enable/disable of the Gemini→third-party fallback chain, takes effect instantly and persists (previously required editing .env and restarting); the toggle only controls fallback — third-party models are always reachable directly and always listed in /v1/models |
 | 2026-06-22 20:06:08 | v1.6.24 - 🧩 Custom Gem support: new "Gem Management" page in the admin panel lets you list / create / edit / delete your own custom Gems; expose any Gem as a model name — any OpenAI-compatible client calling that model name will converse using that Gem's persona; each Gem is bound to its owner account (calls go only to the bound account, not round-robined); deleting a Gem automatically removes its model-name mapping |
 | 2026-06-22 14:21:48 | v1.6.23 - 🧠 Per-model thinking (reasoning_effort) setting for third parties: configure a thinking level per third-party model in API Management (unset / none / low / medium / high / custom); the relay auto-injects it on forward — reasoning_effort for OpenAI-compatible upstreams, mapped to thinking (budget_tokens) for Anthropic with the response thinking mapped back to reasoning_content; zero regression when unset, leave non-thinking models unset; also fixes "a reasoning-only response (content temporarily empty) wrongly treated as empty" |
@@ -400,6 +401,7 @@ response = client.chat.completions.create(
 |--------|----------|----------|
 | GET | `/models` | Available models list |
 | POST | `/chat/completions` | Chat completion (streaming + tool calling) |
+| POST | `/responses` | OpenAI Responses API (text / streaming / tool calling; used by newer clients like Codex CLI) |
 
 ### Claude Compatible (`/claude/v1`)
 

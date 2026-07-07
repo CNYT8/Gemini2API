@@ -196,6 +196,140 @@ data: {"choices":[{"delta":{"content":"。"}}]}
 data: [DONE]
 ```
 
+### POST /openai/v1/responses
+
+OpenAI Responses API。Chat Completions ではなく新しい Responses プロトコルを必要とするクライアント（例: **Codex CLI**。2026 年 2 月に Chat Completions のサポートを終了したため、Codex CLI を gemini2api に接続するにはこのエンドポイントが必要）向けに追加されました。テキスト、ストリーミング、関数/ツール呼び出しに対応し、Gemini モデルと API 管理で設定したサードパーティモデルの両方で利用できます。
+
+**リクエスト:**
+
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "What is 2+2?",
+    "stream": false
+  }'
+```
+
+**リクエストパラメータ:**
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `model` | string | ✅ | モデル ID（例: `gemini-flash`）、または API 管理で設定したサードパーティモデル |
+| `input` | string または array | ✅ | プレーンな文字列（単一のユーザーメッセージの省略形）、または入力アイテムの配列（下記参照） |
+| `instructions` | string | ❌ | 会話の先頭に付加されるシステム/開発者プリアンブル |
+| `stream` | boolean | ❌ | ストリーミングを有効化（デフォルト: false） |
+| `tools` | array | ❌ | ツール呼び出し用の関数定義、**フラット形式**: `{"type":"function","name","description","parameters"}`（注: Chat Completions のネストされた `{"type":"function","function":{...}}` 形式とは異なります） |
+| `tool_choice` | string または object | ❌ | `auto`、`none`、`required`、または特定のツールを強制する `{"type":"function","name":"..."}` |
+| `temperature` | number | ❌ | ランダム性（サードパーティモデルには転送されますが、Gemini 経路では反映されません） |
+| `max_output_tokens` | number | ❌ | 最大レスポンス長（サードパーティモデルには転送されますが、Gemini 経路では反映されません） |
+
+**`input` 配列アイテムの種類:**
+
+- `{"type":"message","role":"user"|"assistant"|"system","content":[...]}` — content のパーツ: `{"type":"input_text","text":...}`、`{"type":"input_image","image_url":"..."}`、`{"type":"output_text","text":...}`
+- `{"type":"function_call","call_id","name","arguments"}` — 直前のアシスタントによるツール呼び出しターン（複数ターンの履歴として自身で再送する場合に使用）
+- `{"type":"function_call_output","call_id","output"}`（または `"tool_result"`）— 送り返すツールの実行結果
+
+**サポートされていません（暗黙の無視ではなく明示的エラー）:** `previous_response_id` — 本サーバーはサーバー側で会話状態を保持しません。指定した場合、黙って無視するのではなく 400 の `invalid_request_error` を返します。毎回のリクエストで会話全体を `input` に含めて送信してください（Codex CLI は既にこの方式で動作しています）。
+
+**レスポンス（非ストリーミング）:**
+
+```json
+{
+  "id": "resp_xxx",
+  "object": "response",
+  "created_at": 1715970000,
+  "status": "completed",
+  "model": "gemini-flash",
+  "output": [
+    {
+      "id": "msg_xxx",
+      "type": "message",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {"type": "output_text", "text": "2 + 2 = 4", "annotations": []}
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 5,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 15
+  },
+  "previous_response_id": null,
+  "instructions": null,
+  "error": null
+}
+```
+
+**レスポンス（ストリーミング）:** 仕様に準拠した名前付き SSE イベントの並びで、各イベントは単調増加する `sequence_number` を持ちます。`data: [DONE]` のような終端マーカーは**ありません**（これは Chat Completions の慣習です）— 完了は `response.completed`（または `response.failed`）によって通知されます。
+
+```
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{...}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,...}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,...}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":3,...}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":4,"delta":"2"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":5,"text":"2 + 2 = 4"}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":6,...}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":7,...}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":8,"response":{...}}
+```
+
+ツール呼び出しの場合、`response.output_item.added`（type が `function_call`）の後には、上記のテキストイベントの代わりに `response.function_call_arguments.delta` / `response.function_call_arguments.done` / `response.output_item.done` が続きます。
+
+**関数呼び出しの例:**
+
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "What is the weather in Paris?",
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {"type": "string"}
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  }'
+```
+レスポンスの `output` には `function_call` アイテムが含まれます:
+```json
+{"id": "fc_xxx", "type": "function_call", "status": "completed", "call_id": "call_xxx", "name": "get_weather", "arguments": "{\"city\": \"Paris\"}"}
+```
+
 ### POST /openai/v1/images/generations
 
 AI 画像生成リクエストを送信します。`prompt` をトリガーとして画像を生成し、`b64_json` 形式で返却します。

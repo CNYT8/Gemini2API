@@ -207,6 +207,136 @@ curl -X POST http://localhost:5918/openai/v1/chat/completions \
   }'
 ```
 
+### POST /openai/v1/responses
+
+OpenAI Responses API. Added for clients that require the newer Responses protocol instead of Chat Completions (e.g. **Codex CLI**, which dropped Chat Completions support in Feb 2026 — pointing Codex CLI at gemini2api needs this endpoint). Supports text, streaming, and function/tool calling, for both Gemini models and third-party models configured in API Management.
+
+**Request:**
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "What is 2+2?",
+    "stream": false
+  }'
+```
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model` | string | Yes | Model ID (e.g., `gemini-flash`), or a third-party model configured in API Management |
+| `input` | string or array | Yes | A plain string (shorthand for a single user message), or an array of input items (see below) |
+| `instructions` | string | No | System/developer preamble prepended to the conversation |
+| `stream` | boolean | No | Enable streaming (default: false) |
+| `tools` | array | No | Function definitions for tool calling, **flat shape**: `{"type":"function","name","description","parameters"}` (note: different from Chat Completions' nested `{"type":"function","function":{...}}` shape) |
+| `tool_choice` | string or object | No | `auto`, `none`, `required`, or `{"type":"function","name":"..."}` to force a specific tool |
+| `temperature` | number | No | Randomness (forwarded to third-party models; not honored on the Gemini path) |
+| `max_output_tokens` | number | No | Max response length (forwarded to third-party models; not honored on the Gemini path) |
+
+**`input` array item types:**
+- `{"type":"message","role":"user"|"assistant"|"system","content":[...]}` — content parts: `{"type":"input_text","text":...}`, `{"type":"input_image","image_url":"..."}`, `{"type":"output_text","text":...}`
+- `{"type":"function_call","call_id","name","arguments"}` — a prior assistant tool-call turn (for multi-turn history you resend yourself)
+- `{"type":"function_call_output","call_id","output"}` (or `"tool_result"`) — a tool's result you're sending back
+
+**Not supported (explicit, not silent):** `previous_response_id` — this server does not keep server-side conversation state. Sending it returns a 400 `invalid_request_error` rather than silently ignoring it. Resend the full conversation in `input` on every request (this is what Codex CLI already does).
+
+**Response (Non-Streaming):**
+```json
+{
+  "id": "resp_xxx",
+  "object": "response",
+  "created_at": 1715970000,
+  "status": "completed",
+  "model": "gemini-flash",
+  "output": [
+    {
+      "id": "msg_xxx",
+      "type": "message",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {"type": "output_text", "text": "2 + 2 = 4", "annotations": []}
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 10,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 5,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 15
+  },
+  "previous_response_id": null,
+  "instructions": null,
+  "error": null
+}
+```
+
+**Response (Streaming):** a spec-correct sequence of named SSE events, each carrying a monotonically increasing `sequence_number`. There is **no** `data: [DONE]` sentinel (that's a Chat Completions convention) — completion is signaled by `response.completed` (or `response.failed`):
+
+```
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{...}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,...}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,...}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":3,...}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":4,"delta":"2"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":5,"text":"2 + 2 = 4"}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":6,...}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":7,...}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":8,"response":{...}}
+```
+
+For a tool call, `response.output_item.added` (type `function_call`) is followed by `response.function_call_arguments.delta` / `response.function_call_arguments.done` / `response.output_item.done` instead of the text events above.
+
+**Function Calling Example:**
+```bash
+curl -X POST http://localhost:5918/openai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -d '{
+    "model": "gemini-flash",
+    "input": "What is the weather in Paris?",
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {"type": "string"}
+          },
+          "required": ["city"]
+        }
+      }
+    ]
+  }'
+```
+Response `output` will contain a `function_call` item:
+```json
+{"id": "fc_xxx", "type": "function_call", "status": "completed", "call_id": "call_xxx", "name": "get_weather", "arguments": "{\"city\": \"Paris\"}"}
+```
+
 ### POST /openai/v1/images/generations
 
 Generate images with AI. Triggered by a text `prompt`, returns the image in `b64_json` format. Also available at the bare path `POST /v1/images/generations`.

@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [1.6.26] - 2026-07-07
+
+### Added
+- 🔌 **OpenAI Responses API 支持**（`/v1/responses` 或 `/openai/v1/responses`）：让需要新版 Responses 协议的客户端（如 2026 年 2 月起砍掉 Chat Completions 支持的 Codex CLI）能正常接入 gemini2api——支持文本对话、流式输出、工具（函数）调用，Gemini 模型和 API 管理配置的第三方模型均可使用。
+- 流式事件严格遵循官方协议顺序，修正了参考实现已知会漏发的两个关键事件：`response.output_text.done` / `response.function_call_arguments.done`。
+
+### Notes
+- 不支持服务端多轮状态（`previous_response_id` 会明确返回 400 `invalid_request_error`，而不是悄悄忽略）——因为 Codex CLI 等客户端本身会重发完整对话历史，无需服务端保存状态。
+- `tools` 使用 Responses API 的扁平格式（`{"type":"function","name",...}`），与 Chat Completions 的嵌套格式不同。
+
 ## [1.6.25] - 2026-06-23
 
 ### Added
