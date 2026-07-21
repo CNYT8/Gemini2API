@@ -56,6 +56,52 @@ def test_open_stream_commits_on_200(monkeypatch):
     asyncio.run(_run())
 
 
+def test_open_stream_preserves_standard_sse_frames(monkeypatch):
+    def handler(request):
+        return httpx.Response(
+            200,
+            text=(
+                'event: chat.completion.chunk\n'
+                'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'
+                ': keepalive\n\n'
+                'data: [DONE]\n\n'
+            ),
+        )
+    _patch_transport(monkeypatch, handler)
+
+    async def _run():
+        stream_resp, err = await fwd.open_openai_stream(_Entry(), [{"role": "user", "content": "x"}], _Req())
+        assert err is None
+        body = await _drain(stream_resp)
+        assert 'event: chat.completion.chunk\ndata: {"choices"' in body
+        assert ": keepalive\n\n" in body
+        assert "data: [DONE]\n\n" in body
+    asyncio.run(_run())
+
+
+def test_open_stream_keeps_line_delimited_openai_compat(monkeypatch):
+    def handler(request):
+        return httpx.Response(
+            200,
+            text=(
+                'data: {"choices":[{"delta":{"content":"A"}}]}\n'
+                'data: {"choices":[{"delta":{"content":"B"}}]}\n'
+                'data: [DONE]\n'
+            ),
+        )
+    _patch_transport(monkeypatch, handler)
+
+    async def _run():
+        stream_resp, err = await fwd.open_openai_stream(_Entry(), [{"role": "user", "content": "x"}], _Req())
+        assert err is None
+        body = await _drain(stream_resp)
+        assert body.count("\n\n") == 3
+        assert '"content":"A"' in body
+        assert '"content":"B"' in body
+        assert "data: [DONE]\n\n" in body
+    asyncio.run(_run())
+
+
 def test_open_stream_fails_over_on_429(monkeypatch):
     def handler(request):
         return httpx.Response(429, json={"error": {"message": "insufficient_quota"}})

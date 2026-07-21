@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # - 被 5xx 限流的账号进入 failover_cooldown 秒冷却，期间不优先选它（不标 expired）
     same_account_5xx_retries: int = 1
     failover_cooldown: float = 30.0
+    # 首个有效文本/图片输出的最长等待时间（秒）。超时仅冷却该账号并尝试换号；设 0 关闭。
+    first_output_timeout: int = 0
     port: int = 5918
     log_level: str = "info"
     rate_limit_enabled: bool = False
@@ -108,6 +110,13 @@ class Settings(BaseSettings):
     def port_range(cls, v: int) -> int:
         if v < 1 or v > 65535:
             raise ValueError("PORT must be between 1 and 65535")
+        return v
+
+    @field_validator("first_output_timeout")
+    @classmethod
+    def first_output_timeout_range(cls, v: int) -> int:
+        if v != 0 and not 30 <= v <= 600:
+            raise ValueError("FIRST_OUTPUT_TIMEOUT must be 0 or between 30 and 600 seconds")
         return v
 
     class Config:

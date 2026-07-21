@@ -35,9 +35,17 @@ class ReloadCookiesRequest(BaseModel):
 
 
 class AddAccountRequest(BaseModel):
-    psid: str
+    auth_type: str = "cookie"
+    psid: str = ""
     psidts: str = ""
     label: str = ""
+    oauth_type: str = "code_assist"
+    access_token: str = ""
+    refresh_token: str = ""
+    expires_at: float = 0
+    project_id: str = ""
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
 
 
 @router.post("/reload-cookies")
@@ -49,7 +57,7 @@ async def reload_cookies(req: ReloadCookiesRequest = None):
     if req and (req.psid or req.psidts):
         result = None
         for account in account_pool.accounts:
-            if account.client:
+            if account.auth_type == "cookie" and account.client:
                 result = await account.client.reload_cookies(psid=req.psid, psidts=req.psidts)
                 if result.get("success"):
                     return {"status": "ok", "message": "Cookies reloaded successfully", "healthy": True}
@@ -68,7 +76,7 @@ async def reload_cookies(req: ReloadCookiesRequest = None):
             fresh = Settings()
             result = None
             for account in account_pool.accounts:
-                if account.client:
+                if account.auth_type == "cookie" and account.client:
                     result = await account.client.reload_cookies(
                         psid=fresh.gemini_psid,
                         psidts=fresh.gemini_psidts,
@@ -144,10 +152,31 @@ async def list_accounts():
 @router.post("/accounts")
 async def add_account(req: AddAccountRequest):
     try:
+        auth_type = req.auth_type.strip().lower()
+        if auth_type not in ("cookie", "oauth"):
+            raise ValueError("auth_type must be cookie or oauth")
+        if auth_type == "cookie" and not req.psid.strip():
+            raise ValueError("__Secure-1PSID is required for Cookie accounts")
+        oauth_type = req.oauth_type.strip().lower()
+        if auth_type == "oauth":
+            if oauth_type not in ("code_assist", "ai_studio"):
+                raise ValueError("oauth_type must be code_assist or ai_studio")
+            if not (req.access_token.strip() or req.refresh_token.strip()):
+                raise ValueError("Access Token or Refresh Token is required for OAuth accounts")
+            if bool(req.oauth_client_id.strip()) != bool(req.oauth_client_secret.strip()):
+                raise ValueError("OAuth Client ID and Client Secret must be configured together")
         account = await account_pool.add_account(
             psid=req.psid,
             psidts=req.psidts,
             label=req.label,
+            auth_type=auth_type,
+            oauth_type=oauth_type,
+            access_token=req.access_token,
+            refresh_token=req.refresh_token,
+            expires_at=req.expires_at,
+            project_id=req.project_id,
+            oauth_client_id=req.oauth_client_id,
+            oauth_client_secret=req.oauth_client_secret,
         )
         return {
             "status": "ok",
@@ -155,8 +184,14 @@ async def add_account(req: AddAccountRequest):
                 "id": account.id,
                 "label": account.label,
                 "status": account.status.value,
+                "auth_type": account.auth_type,
             },
         }
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": str(e), "type": "validation_error"}},
+        )
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -196,6 +231,11 @@ class UpdateCookiesRequest(BaseModel):
 async def update_account_cookies(account_id: str, req: UpdateCookiesRequest):
     for account in account_pool.accounts:
         if account.id == account_id:
+            if account.auth_type != "cookie":
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": {"message": "This is not a Cookie account", "type": "account_type_error"}},
+                )
             if account.client:
                 result = await account.client.reload_cookies(psid=req.psid, psidts=req.psidts)
                 if result.get("success"):
@@ -211,6 +251,45 @@ async def update_account_cookies(account_id: str, req: UpdateCookiesRequest):
     return JSONResponse(
         status_code=404,
         content={"error": {"message": f"Account {account_id} not found", "type": "not_found"}},
+    )
+
+
+class UpdateOAuthRequest(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    expires_at: float = 0
+    project_id: Optional[str] = None
+    oauth_client_id: Optional[str] = None
+    oauth_client_secret: Optional[str] = None
+
+
+@router.put("/accounts/{account_id}/oauth")
+async def update_account_oauth(account_id: str, req: UpdateOAuthRequest):
+    if not req.access_token.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": "Access Token is required", "type": "validation_error"}},
+        )
+    try:
+        result = await account_pool.update_oauth_credentials(
+            account_id,
+            access_token=req.access_token,
+            refresh_token=req.refresh_token,
+            expires_at=req.expires_at,
+            project_id=req.project_id,
+            oauth_client_id=req.oauth_client_id,
+            oauth_client_secret=req.oauth_client_secret,
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": str(e), "type": "account_type_error"}},
+        )
+    if result.get("valid"):
+        return {"status": "ok", "message": f"Account {account_id} OAuth credentials updated"}
+    return JSONResponse(
+        status_code=503,
+        content={"error": {"message": result.get("error", "OAuth validation failed"), "type": "oauth_error"}},
     )
 
 
@@ -315,4 +394,3 @@ async def cleanup_web_chats(req: CleanupWebChatsRequest = None):
     _cleanup_bg_tasks.add(task)
     task.add_done_callback(_cleanup_bg_tasks.discard)
     return {"status": "started", "message": "清理已在后台开始，结果见服务端日志"}
-

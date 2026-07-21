@@ -14,7 +14,7 @@ from app.core.api_forwarder import forward_to_provider, open_stream
 from app.core.fallback import fallback_enabled, is_empty_result, get_fallback_entries, openai_data_is_empty
 from app.core.conversation_store import conversation_store
 from app.core.gemini_client import GEMINI_MODELS, MODEL_ALIASES, _resolve_model
-from app.core.stream import split_into_chunks, format_sse
+from app.core.stream import split_into_chunks, format_sse, stream_with_keepalive
 from app.models.openai import (
     ChatRequest, ChatResponse, Choice, ChoiceMessage,
     StreamChunk, StreamChoice, StreamDelta,
@@ -450,19 +450,30 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
         return
 
     # === 真流式路径 ===
-    first = StreamChunk(
-        id=completion_id, model=model_name,
-        choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
-    )
-    yield format_sse(first.model_dump())
-
     full_text = ""
     new_conv_id = ""
     final_images = []
     streamed_any = False
+    protocol_started = False
     try:
-        async for evt in gemini_client.generate_stream(prompt, model, gemini_conv_id, attachments,
-                                                        gem_id=gem_id, account_id=account_id):
+        events = stream_with_keepalive(
+            gemini_client.generate_stream(
+                prompt, model, gemini_conv_id, attachments,
+                gem_id=gem_id, account_id=account_id,
+            ),
+            interval=_SSE_KEEPALIVE_INTERVAL,
+        )
+        async for evt in events:
+            if evt is None:
+                yield ": ping\n\n"
+                continue
+            if not protocol_started:
+                first = StreamChunk(
+                    id=completion_id, model=model_name,
+                    choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
+                )
+                yield format_sse(first.model_dump())
+                protocol_started = True
             if evt.get("type") == "delta":
                 # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                 delta = evt.get("text", "")
@@ -487,6 +498,7 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
                             choices=[StreamChoice(delta=StreamDelta(content=tail))],
                         )
                         yield format_sse(chunk.model_dump())
+                        streamed_any = True
                 else:
                     full_text = final_text
                 new_conv_id = evt.get("conversation_id", "")
@@ -501,6 +513,20 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
                 full_text = result.get("text", "")
                 new_conv_id = result.get("conversation_id", "")
                 final_images = result.get("images") or []
+                if (full_text or final_images) and not protocol_started:
+                    first = StreamChunk(
+                        id=completion_id, model=model_name,
+                        choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
+                    )
+                    yield format_sse(first.model_dump())
+                    protocol_started = True
+                if full_text:
+                    chunk = StreamChunk(
+                        id=completion_id, model=model_name,
+                        choices=[StreamChoice(delta=StreamDelta(content=full_text))],
+                    )
+                    yield format_sse(chunk.model_dump())
+                    streamed_any = True
             except Exception as e2:
                 # 尚未流出任何内容（只发过 role 首帧）→ 可安全改用第三方兜底（流式）
                 if not streamed_any:
@@ -535,6 +561,13 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
     # 生图兜底：极少数生图意图未被识别而走了真流式（文字已先流出，无法把图收回到最前）。
     # 此时图片在最后帧拿到，补发图片增量；用单换行紧凑拼接，保证图能独立成行正常显示。
     if final_images:
+        if not protocol_started:
+            first = StreamChunk(
+                id=completion_id, model=model_name,
+                choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
+            )
+            yield format_sse(first.model_dump())
+            protocol_started = True
         md = _images_md_from_base(final_images, base_url)
         tail = ("\n" + md) if full_text.strip() else md
         full_text += tail
@@ -543,6 +576,8 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
             choices=[StreamChoice(delta=StreamDelta(content=tail))],
         )
         yield format_sse(chunk.model_dump())
+        if tail:
+            streamed_any = True
 
     # 持久化对话（与 buffered 子路径一致：流式只存 assistant，
     # 多轮续接靠 gemini_conv_id，user 消息已在请求里）
@@ -550,6 +585,13 @@ async def _stream_response(prompt: str, model: str, has_tools: bool, gemini_conv
         conv.gemini_conv_id = new_conv_id
         conv.add_message("assistant", full_text)
         await conversation_store.update(conv)
+
+    if not protocol_started:
+        first = StreamChunk(
+            id=completion_id, model=model_name,
+            choices=[StreamChoice(delta=StreamDelta(role="assistant"))],
+        )
+        yield format_sse(first.model_dump())
 
     done_chunk = StreamChunk(
         id=completion_id, model=model_name,

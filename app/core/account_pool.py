@@ -2,17 +2,38 @@ import json
 import time
 import asyncio
 import logging
+from collections import OrderedDict
+from contextlib import aclosing
 from enum import Enum
 from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.core.gemini_client import GeminiWebClient, HTTPStatusError
+from app.core.gemini_oauth_client import GeminiOAuthClient
 from app.config import settings
+from app.core.stream import prefetch_first_effective_stream_event
 from app.core.usage_metrics import live_metrics
 from app.utils.atomic_io import atomic_write_text
 
 logger = logging.getLogger(__name__)
+
+_SESSION_AFFINITY_TTL = 60 * 60
+_SESSION_AFFINITY_MAX_ENTRIES = 10_000
+
+
+def _parse_oauth_expiry(value) -> float:
+    """Accept Unix seconds, Gemini CLI millisecond expiry, or RFC3339 JSON values."""
+    if value in (None, ""):
+        return 0.0
+    try:
+        parsed = float(value)
+        return parsed / 1000 if parsed > 100_000_000_000 else parsed
+    except (TypeError, ValueError):
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
 
 
 def _is_5xx(exc: Exception) -> bool:
@@ -20,19 +41,32 @@ def _is_5xx(exc: Exception) -> bool:
     return isinstance(exc, HTTPStatusError) and 500 <= exc.status_code < 600
 
 
+def _is_cooldown_error(exc: Exception) -> bool:
+    return _is_5xx(exc) or (
+        isinstance(exc, HTTPStatusError) and exc.status_code == 429
+    )
+
+
 def _is_retryable(exc: Exception) -> bool:
     """可换账号 failover 重试的错误集合（Issue#1-A）：
-    - 5xx（含 Google 503 限流）：冷却该账号后换号
+    - 429/5xx（含 Google 503 限流）：冷却该账号后换号
     - RuntimeError 且含 "not ready"：客户端会话未就绪，换健康账号
     - HTTPStatusError 401/403：凭据失效，换号并标记 EXPIRED
     """
     if _is_5xx(exc):
+        return True
+    if isinstance(exc, HTTPStatusError) and exc.status_code == 429:
         return True
     if isinstance(exc, RuntimeError) and "not ready" in str(exc).lower():
         return True
     if isinstance(exc, HTTPStatusError) and exc.status_code in (401, 403):
         return True
     return False
+
+
+def _is_soft_stream_start_failure(exc: Exception) -> bool:
+    """First-output timeout/empty stream should cool down an account, not expire it."""
+    return isinstance(exc, RuntimeError) and "stream not ready" in str(exc).lower()
 
 
 class AccountStatus(str, Enum):
@@ -50,9 +84,17 @@ class RotationStrategy(str, Enum):
 @dataclass
 class Account:
     id: str
-    psid: str
-    psidts: str
+    psid: str = ""
+    psidts: str = ""
     label: str = ""
+    auth_type: str = "cookie"
+    oauth_type: str = "code_assist"
+    access_token: str = ""
+    refresh_token: str = ""
+    expires_at: float = 0
+    project_id: str = ""
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
     status: AccountStatus = AccountStatus.ACTIVE
     request_count: int = 0
     error_count: int = 0
@@ -63,7 +105,7 @@ class Account:
     # 被 5xx/503 限流后的冷却截止时间戳（loop.time()）；冷却期内不优先选，但不算 expired
     cooldown_until: float = 0.0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    client: GeminiWebClient | None = field(default=None, repr=False)
+    client: GeminiWebClient | GeminiOAuthClient | None = field(default=None, repr=False)
 
 
 class AccountPool:
@@ -80,6 +122,9 @@ class AccountPool:
         # 并发满载时排队等待上限（秒）。等不到可用槽位才报错，而不是立即拒绝，
         # 让 agent 的高并发请求排队通过而非撞 "No available accounts" 失败。
         self._acquire_timeout = settings.acquire_timeout
+        # Gemini 网页 conversation_id 与账号绑定。仅保存在内存中，不改变 accounts.json；
+        # LRU 上限防止长期运行时被无界会话量撑大。
+        self._session_affinity: OrderedDict[str, tuple[str, float]] = OrderedDict()
         # 持有后台 fire-and-forget task 的强引用，防止被 GC 中途回收
         self._bg_tasks: set = set()
 
@@ -123,14 +168,37 @@ class AccountPool:
             try:
                 if not isinstance(item, dict):
                     raise TypeError("not an object")
-                psid = item.get("psid")
-                if not psid:
+                auth_type = str(item.get("auth_type") or "cookie").strip().lower()
+                if auth_type not in ("cookie", "oauth"):
+                    raise ValueError(f"unsupported auth_type: {auth_type}")
+                psid = str(item.get("psid") or "")
+                access_token = str(item.get("access_token") or item.get("token") or "")
+                refresh_token = str(item.get("refresh_token") or "")
+                expires_at = _parse_oauth_expiry(item.get("expires_at", item.get("expiry_date", 0)))
+                oauth_type = str(item.get("oauth_type") or "code_assist").strip()
+                oauth_client_id = str(item.get("oauth_client_id") or "").strip()
+                oauth_client_secret = str(item.get("oauth_client_secret") or "").strip()
+                if auth_type == "cookie" and not psid:
                     raise KeyError("psid")
+                if auth_type == "oauth" and not (access_token or refresh_token):
+                    raise KeyError("access_token/refresh_token")
+                if auth_type == "oauth" and oauth_type not in ("code_assist", "ai_studio"):
+                    raise ValueError(f"unsupported oauth_type: {oauth_type}")
+                if bool(oauth_client_id) != bool(oauth_client_secret):
+                    raise ValueError("oauth_client_id/oauth_client_secret must be configured together")
                 account = Account(
                     id=item.get("id", f"account-{i}"),
                     psid=psid.strip().strip('"').strip("'").rstrip(";"),
                     psidts=(item.get("psidts") or "").strip().strip('"').strip("'").rstrip(";"),
                     label=item.get("label", f"account-{i}"),
+                    auth_type=auth_type,
+                    oauth_type=oauth_type,
+                    access_token=access_token.strip(),
+                    refresh_token=refresh_token.strip(),
+                    expires_at=expires_at,
+                    project_id=str(item.get("project_id") or "").strip(),
+                    oauth_client_id=oauth_client_id,
+                    oauth_client_secret=oauth_client_secret,
                 )
             except Exception as e:
                 logger.warning(f"Skipping corrupt account entry #{i} in {path}: {e}")
@@ -159,7 +227,48 @@ class AccountPool:
         self._accounts.append(account)
 
     async def _init_account_client(self, account: Account):
-        client = GeminiWebClient(psid=account.psid, psidts=account.psidts)
+        if account.auth_type == "oauth":
+            async def _persist_oauth_update(
+                *,
+                access_token: str | None = None,
+                refresh_token: str | None = None,
+                expires_at: float | None = None,
+                project_id: str | None = None,
+            ):
+                async with self._cond:
+                    if access_token is not None:
+                        account.access_token = access_token
+                    if refresh_token is not None:
+                        account.refresh_token = refresh_token
+                    if expires_at is not None:
+                        account.expires_at = expires_at
+                    if project_id is not None:
+                        account.project_id = project_id
+                    self._save_to_file()
+
+            async def _token_update(access_token: str, refresh_token: str, expires_at: float):
+                await _persist_oauth_update(
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    expires_at=expires_at,
+                )
+
+            async def _project_update(project_id: str):
+                await _persist_oauth_update(project_id=project_id)
+
+            client = GeminiOAuthClient(
+                access_token=account.access_token,
+                refresh_token=account.refresh_token,
+                expires_at=account.expires_at,
+                project_id=account.project_id,
+                oauth_type=account.oauth_type,
+                client_id=account.oauth_client_id,
+                client_secret=account.oauth_client_secret,
+                token_update=_token_update,
+                project_update=_project_update,
+            )
+        else:
+            client = GeminiWebClient(psid=account.psid, psidts=account.psidts)
         await client.initialize()
         account.client = client
         if client.is_healthy:
@@ -188,8 +297,94 @@ class AccountPool:
         fresh = [a for a in candidates if a.cooldown_until <= now]
         pool = fresh if fresh else candidates  # 优先非冷却；全冷却则用冷却的兜底
         if self._strategy == RotationStrategy.ROUND_ROBIN:
-            return self._pick_round_robin(pool)
+            return self._pick_load_aware_round_robin(pool)
         return self._pick_failover(pool)
+
+    def _pick_load_aware_round_robin(self, available: list[Account]) -> Account:
+        """按负载率 + LRU 分层选择，同层再使用稳定轮询。
+
+        单账号并发上限当前为全局值，因此负载率等价于 active_requests / max；
+        保留比值写法，后续若支持账号级上限无需重写选择逻辑。
+        """
+        limit = max(1, self._max_concurrent)
+        min_load = min(a.active_requests / limit for a in available)
+        least_loaded = [
+            a for a in available
+            if a.active_requests / limit == min_load
+        ]
+        if len(least_loaded) == 1:
+            return least_loaded[0]
+
+        oldest = min(
+            a.last_used.timestamp() if a.last_used is not None else float("-inf")
+            for a in least_loaded
+        )
+        least_recent = [
+            a for a in least_loaded
+            if (a.last_used.timestamp() if a.last_used is not None else float("-inf")) == oldest
+        ]
+        return self._pick_round_robin(least_recent)
+
+    def _prune_session_affinity_locked(self, now: float) -> None:
+        while self._session_affinity:
+            _, (_, expires_at) = next(iter(self._session_affinity.items()))
+            if expires_at > now:
+                break
+            self._session_affinity.popitem(last=False)
+        while len(self._session_affinity) > _SESSION_AFFINITY_MAX_ENTRIES:
+            self._session_affinity.popitem(last=False)
+
+    def _drop_account_affinity_locked(self, account_id: str) -> None:
+        stale = [
+            key for key, (bound_id, _) in self._session_affinity.items()
+            if bound_id == account_id
+        ]
+        for key in stale:
+            self._session_affinity.pop(key, None)
+
+    def _find_affinity_account_locked(
+        self, affinity_key: str, exclude: set | None, now: float,
+    ) -> Account | None:
+        if not affinity_key:
+            return None
+        self._prune_session_affinity_locked(now)
+        binding = self._session_affinity.get(affinity_key)
+        if binding is None:
+            return None
+        account_id, _ = binding
+        account = self._get_account(account_id)
+        if account is None or account.status in (AccountStatus.EXPIRED, AccountStatus.DISABLED):
+            self._session_affinity.pop(affinity_key, None)
+            return None
+        if exclude and account.id in exclude:
+            return None
+        if (
+            account.status != AccountStatus.ACTIVE
+            or account.client is None
+            or not account.client.is_healthy
+            or account.cooldown_until > now
+        ):
+            return None
+        self._session_affinity[affinity_key] = (
+            account.id,
+            now + _SESSION_AFFINITY_TTL,
+        )
+        self._session_affinity.move_to_end(affinity_key)
+        return account
+
+    async def _bind_session_affinity(self, affinity_key: str, account_id: str) -> None:
+        if not affinity_key or not account_id:
+            return
+        loop = asyncio.get_running_loop()
+        async with self._cond:
+            now = loop.time()
+            self._prune_session_affinity_locked(now)
+            self._session_affinity[affinity_key] = (
+                account_id,
+                now + _SESSION_AFFINITY_TTL,
+            )
+            self._session_affinity.move_to_end(affinity_key)
+            self._prune_session_affinity_locked(now)
 
     async def _try_recover_expired(self):
         """无可用账号时，尝试恢复 EXPIRED 账号（已持有锁）。"""
@@ -204,12 +399,22 @@ class AccountPool:
                 except Exception:
                     pass
 
-    async def acquire(self, exclude: set | None = None) -> Account:
+    async def acquire(self, exclude: set | None = None, affinity_key: str = "") -> Account:
         loop = asyncio.get_event_loop()
         deadline = loop.time() + self._acquire_timeout
         async with self._cond:
             while True:
-                account = self._find_available(exclude)
+                now = loop.time()
+                sticky = self._find_affinity_account_locked(affinity_key, exclude, now)
+                sticky_wait = False
+                if sticky is not None and sticky.active_requests < self._max_concurrent:
+                    account = sticky
+                elif sticky is not None:
+                    # 网页会话状态属于原账号；槽位满时等待，不为追求瞬时吞吐跨号。
+                    account = None
+                    sticky_wait = True
+                else:
+                    account = self._find_available(exclude)
                 if account is not None:
                     account.active_requests += 1
                     account.last_used = datetime.now(timezone.utc)
@@ -238,6 +443,12 @@ class AccountPool:
                 # 有 ACTIVE 账号但都满载 → 排队等可用槽位，而非直接拒绝
                 remaining = deadline - loop.time()
                 if remaining <= 0:
+                    if sticky_wait:
+                        raise RuntimeError(
+                            f"Sticky account {sticky.id} busy "
+                            f"(max_concurrent={self._max_concurrent}), "
+                            f"waited {self._acquire_timeout}s"
+                        )
                     raise RuntimeError(
                         f"All accounts busy (max_concurrent={self._max_concurrent}), "
                         f"waited {self._acquire_timeout}s"
@@ -245,24 +456,34 @@ class AccountPool:
                 try:
                     await asyncio.wait_for(self._cond.wait(), timeout=remaining)
                 except asyncio.TimeoutError:
+                    if sticky_wait:
+                        raise RuntimeError(
+                            f"Sticky account {sticky.id} busy "
+                            f"(max_concurrent={self._max_concurrent}), "
+                            f"waited {self._acquire_timeout}s"
+                        )
                     raise RuntimeError(
                         f"All accounts busy (max_concurrent={self._max_concurrent}), "
                         f"waited {self._acquire_timeout}s"
                     )
 
-    async def release(self, account: Account, success: bool, cooldown: bool = False):
+    async def release(self, account: Account, success: bool | None, cooldown: bool = False):
         async with self._cond:
             account.active_requests = max(0, account.active_requests - 1)
             account.request_count += 1
-            if success:
+            if success is True:
                 account.consecutive_failures = 0
+            elif success is None:
+                # 下游客户端取消/关闭生成器，只释放槽位，不改变上游账号健康状态。
+                pass
             elif cooldown:
-                # 5xx/503 限流：不是账号坏，只是被 Google 临时限流。
-                # 设短期冷却（期间降级不优先选），不累积失败、不标 expired。
+                # 429/5xx 或首输出为空/超时都属于暂时不可用：短期冷却并换号，
+                # 不累积永久失败，避免把网络抖动或单次空流误判成凭据过期。
                 account.error_count += 1
                 account.cooldown_until = asyncio.get_event_loop().time() + settings.failover_cooldown
                 logger.warning(
-                    f"Account {account.id} cooled down for {settings.failover_cooldown}s (5xx rate-limit)"
+                    f"Account {account.id} temporarily cooled down for "
+                    f"{settings.failover_cooldown}s"
                 )
             else:
                 account.error_count += 1
@@ -301,31 +522,118 @@ class AccountPool:
                 return a
         return available[0]
 
-    async def add_account(self, psid: str, psidts: str, label: str = "") -> Account:
-        # 用单调计数器生成 id，删除中间账号后也绝不撞号（不再用易撞号的 len()）。
-        self._sync_id_seq()
-        account_id = f"account-{self._next_id_seq}"
-        self._next_id_seq += 1
+    async def add_account(
+        self,
+        psid: str = "",
+        psidts: str = "",
+        label: str = "",
+        *,
+        auth_type: str = "cookie",
+        oauth_type: str = "code_assist",
+        access_token: str = "",
+        refresh_token: str = "",
+        expires_at: float = 0,
+        project_id: str = "",
+        oauth_client_id: str = "",
+        oauth_client_secret: str = "",
+    ) -> Account:
+        auth_type = auth_type.strip().lower()
+        oauth_type = oauth_type.strip()
+        if auth_type not in ("cookie", "oauth"):
+            raise ValueError(f"unsupported auth_type: {auth_type}")
+        if auth_type == "cookie" and not psid.strip():
+            raise ValueError("Cookie account requires psid")
+        if auth_type == "oauth":
+            if oauth_type not in ("code_assist", "ai_studio"):
+                raise ValueError(f"unsupported oauth_type: {oauth_type}")
+            if not (access_token.strip() or refresh_token.strip()):
+                raise ValueError("OAuth account requires access_token or refresh_token")
+            if bool(oauth_client_id.strip()) != bool(oauth_client_secret.strip()):
+                raise ValueError("OAuth Client ID and Client Secret must be configured together")
+        # 账号初始化含网络 I/O，不能持锁等待；只在短临界区内原子预留 id。
+        async with self._cond:
+            self._sync_id_seq()
+            account_id = f"account-{self._next_id_seq}"
+            self._next_id_seq += 1
         account = Account(
             id=account_id,
             psid=psid.strip().strip('"').strip("'").rstrip(";"),
             psidts=psidts.strip().strip('"').strip("'").rstrip(";"),
             label=label or account_id,
+            auth_type=auth_type,
+            oauth_type=oauth_type,
+            access_token=access_token.strip(),
+            refresh_token=refresh_token.strip(),
+            expires_at=float(expires_at or 0),
+            project_id=project_id.strip(),
+            oauth_client_id=oauth_client_id.strip(),
+            oauth_client_secret=oauth_client_secret.strip(),
         )
         await self._init_account_client(account)
-        self._accounts.append(account)
-        self._save_to_file()
+        async with self._cond:
+            self._accounts.append(account)
+            self._save_to_file()
         return account
 
+    async def update_oauth_credentials(
+        self,
+        account_id: str,
+        *,
+        access_token: str,
+        refresh_token: str | None = None,
+        expires_at: float = 0,
+        project_id: str | None = None,
+        oauth_client_id: str | None = None,
+        oauth_client_secret: str | None = None,
+    ) -> dict:
+        account = self._get_account(account_id)
+        if not account:
+            raise ValueError(f"Account {account_id} not found")
+        if account.auth_type != "oauth" or not isinstance(account.client, GeminiOAuthClient):
+            raise ValueError(f"Account {account_id} is not an OAuth account")
+        next_client_id = account.oauth_client_id if oauth_client_id is None else oauth_client_id.strip()
+        next_client_secret = (
+            account.oauth_client_secret if oauth_client_secret is None else oauth_client_secret.strip()
+        )
+        if bool(next_client_id) != bool(next_client_secret):
+            raise ValueError("OAuth Client ID and Client Secret must be configured together")
+        account.access_token = access_token.strip()
+        if refresh_token is not None:
+            account.refresh_token = refresh_token.strip()
+        account.expires_at = float(expires_at or 0)
+        if project_id is not None:
+            account.project_id = project_id.strip()
+        if oauth_client_id is not None:
+            account.oauth_client_id = oauth_client_id.strip()
+        if oauth_client_secret is not None:
+            account.oauth_client_secret = oauth_client_secret.strip()
+        result = await account.client.update_credentials(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
+            project_id=project_id,
+            client_id=oauth_client_id,
+            client_secret=oauth_client_secret,
+        )
+        account.status = AccountStatus.ACTIVE if result.get("valid") else AccountStatus.EXPIRED
+        async with self._cond:
+            self._save_to_file()
+        return result
+
     async def remove_account(self, account_id: str) -> bool:
-        for i, account in enumerate(self._accounts):
-            if account.id == account_id:
-                if account.client:
-                    await account.client.shutdown()
-                self._accounts.pop(i)
-                self._save_to_file()
-                return True
-        return False
+        removed = None
+        async with self._cond:
+            for i, account in enumerate(self._accounts):
+                if account.id == account_id:
+                    removed = self._accounts.pop(i)
+                    self._drop_account_affinity_locked(account_id)
+                    self._save_to_file()
+                    break
+        if not removed:
+            return False
+        if removed.client:
+            await removed.client.shutdown()
+        return True
 
     async def check_account(self, account_id: str) -> dict:
         for account in self._accounts:
@@ -357,7 +665,7 @@ class AccountPool:
         """列出所有 active 账号的网页端会话（只读，用于验证/排查）。"""
         out = []
         for account in self._accounts:
-            if account.status != AccountStatus.ACTIVE or not account.client:
+            if getattr(account, "auth_type", "cookie") != "cookie" or account.status != AccountStatus.ACTIVE or not account.client:
                 continue
             try:
                 chats = await account.client.list_web_chats(recent=recent)
@@ -370,7 +678,7 @@ class AccountPool:
         """对所有 active 账号清理超过 keep_hours 的网页会话（置顶可保留）。"""
         out = []
         for account in self._accounts:
-            if account.status != AccountStatus.ACTIVE or not account.client:
+            if getattr(account, "auth_type", "cookie") != "cookie" or account.status != AccountStatus.ACTIVE or not account.client:
                 continue
             try:
                 res = await account.client.cleanup_old_web_chats(
@@ -391,24 +699,32 @@ class AccountPool:
         acc = self._get_account(account_id)
         if not acc or not acc.client:
             raise ValueError(f"Account {account_id} not found or no client")
+        if getattr(acc, "auth_type", "cookie") != "cookie":
+            raise ValueError("Custom Gems are only supported by Cookie accounts")
         return await acc.client.list_gems()
 
     async def create_gem(self, account_id: str, name: str, prompt: str, description: str = "") -> str | None:
         acc = self._get_account(account_id)
         if not acc or not acc.client:
             raise ValueError(f"Account {account_id} not found or no client")
+        if getattr(acc, "auth_type", "cookie") != "cookie":
+            raise ValueError("Custom Gems are only supported by Cookie accounts")
         return await acc.client.create_gem(name, prompt, description)
 
     async def update_gem(self, account_id: str, gem_id: str, name: str, prompt: str, description: str = "") -> bool:
         acc = self._get_account(account_id)
         if not acc or not acc.client:
             raise ValueError(f"Account {account_id} not found or no client")
+        if getattr(acc, "auth_type", "cookie") != "cookie":
+            raise ValueError("Custom Gems are only supported by Cookie accounts")
         return await acc.client.update_gem(gem_id, name, prompt, description)
 
     async def delete_gem(self, account_id: str, gem_id: str) -> bool:
         acc = self._get_account(account_id)
         if not acc or not acc.client:
             raise ValueError(f"Account {account_id} not found or no client")
+        if getattr(acc, "auth_type", "cookie") != "cookie":
+            raise ValueError("Custom Gems are only supported by Cookie accounts")
         return await acc.client.delete_gem(gem_id)
 
     def set_strategy(self, strategy: str):
@@ -436,6 +752,11 @@ class AccountPool:
                 "id": a.id,
                 "label": a.label,
                 "psid": a.psid,
+                "auth_type": a.auth_type,
+                "oauth_type": a.oauth_type if a.auth_type == "oauth" else "",
+                "access_token_configured": bool(a.access_token),
+                "refresh_token_configured": bool(a.refresh_token),
+                "project_id": a.project_id if a.auth_type == "oauth" else "",
                 "status": a.status.value,
                 "request_count": a.request_count,
                 "error_count": a.error_count,
@@ -456,7 +777,7 @@ class AccountPool:
     async def generate(self, prompt: str, model: str, conversation_id: str = "",
                        attachments: list | None = None, gem_id: str | None = None,
                        account_id: str | None = None) -> dict:
-        # failover：某账号被可重试错误（5xx/未就绪/401·403）打回时，换下一个 active 账号重试，
+        # failover：某账号被可重试错误（429/5xx/未就绪/401·403）打回时，换下一个 active 账号重试，
         # 直到成功或无更多账号可试。5xx 限流账号进入冷却，401/403 标 expired。
         tried: set = set()
         # 绑定账号：排除其他所有账号，使 acquire/failover 只可能选中目标账号
@@ -467,7 +788,10 @@ class AccountPool:
         last_err = None
         while True:
             try:
-                account = await self.acquire(exclude=tried if tried else None)
+                acquire_kwargs = {"exclude": tried if tried else None}
+                if conversation_id and not account_id:
+                    acquire_kwargs["affinity_key"] = conversation_id
+                account = await self.acquire(**acquire_kwargs)
             except RuntimeError:
                 # 没有（更多）账号可用：抛出最后一次可重试错误（若有），否则抛 acquire 的错
                 if last_err is not None:
@@ -483,6 +807,9 @@ class AccountPool:
             released = False
             try:
                 result = await account.client.generate(prompt, model, conversation_id, attachments, gem_id)
+                new_conversation_id = result.get("conversation_id", "")
+                if new_conversation_id:
+                    await self._bind_session_affinity(new_conversation_id, account.id)
                 live_metrics.record_request(model, (time.time() - t0) * 1000)
                 await self.release(account, success=True)
                 released = True
@@ -490,10 +817,10 @@ class AccountPool:
             except Exception as e:
                 live_metrics.record_request(model, (time.time() - t0) * 1000)
                 if _is_retryable(e):
-                    # 可重试：5xx 冷却该账号、401/403 标 expired，换下一个账号重试
+                    # 可重试：429/5xx 冷却该账号、401/403 标 expired，换下一个账号重试
                     last_err = e
                     tried.add(account.id)
-                    await self.release(account, success=False, cooldown=_is_5xx(e))
+                    await self.release(account, success=False, cooldown=_is_cooldown_error(e))
                     released = True
                     if isinstance(e, HTTPStatusError) and e.status_code in (401, 403):
                         account.status = AccountStatus.EXPIRED
@@ -505,7 +832,7 @@ class AccountPool:
             finally:
                 # 兜底：CancelledError/GeneratorExit 等未走上面分支的路径也归还槽位（P0-4 防泄漏死锁）
                 if not released:
-                    await self.release(account, success=False)
+                    await self.release(account, success=None)
 
     async def generate_stream(self, prompt: str, model: str, conversation_id: str = "",
                               attachments: list | None = None, gem_id: str | None = None,
@@ -513,7 +840,7 @@ class AccountPool:
         """真流式：持有账号槽位直到整个流结束，再 release。
         逐块产出 {"type":"delta","text":增量} ，最后产出 {"type":"final", ...}（含会话ID/图片）。
 
-        failover：仅在「尚未向客户端 yield 任何内容前」遇到可重试错误（5xx/未就绪/401·403）才换账号重试
+        failover：仅在「尚未向客户端 yield 任何内容前」遇到可重试错误（429/5xx/未就绪/401·403）才换账号重试
         （已经吐出部分内容后再换账号会导致重复，故此时只能终止）。
         """
         tried: set = set()
@@ -525,7 +852,10 @@ class AccountPool:
         last_err = None
         while True:
             try:
-                account = await self.acquire(exclude=tried if tried else None)
+                acquire_kwargs = {"exclude": tried if tried else None}
+                if conversation_id and not account_id:
+                    acquire_kwargs["affinity_key"] = conversation_id
+                account = await self.acquire(**acquire_kwargs)
             except RuntimeError:
                 if last_err is not None:
                     raise last_err
@@ -540,9 +870,18 @@ class AccountPool:
             failover = False
             released = False
             try:
-                async for evt in account.client.generate_stream(prompt, model, conversation_id, attachments, gem_id):
-                    emitted_any = True
-                    yield evt
+                events = await prefetch_first_effective_stream_event(
+                    account.client.generate_stream(prompt, model, conversation_id, attachments, gem_id),
+                    timeout=settings.first_output_timeout,
+                )
+                async with aclosing(events):
+                    async for evt in events:
+                        emitted_any = True
+                        if evt.get("type") == "final":
+                            new_conversation_id = evt.get("conversation_id", "")
+                            if new_conversation_id:
+                                await self._bind_session_affinity(new_conversation_id, account.id)
+                        yield evt
                 live_metrics.record_request(model, (time.time() - t0) * 1000)
                 await self.release(account, success=True)
                 released = True
@@ -553,7 +892,11 @@ class AccountPool:
                 if _is_retryable(e) and not emitted_any:
                     last_err = e
                     tried.add(account.id)
-                    await self.release(account, success=False, cooldown=_is_5xx(e))
+                    await self.release(
+                        account,
+                        success=False,
+                        cooldown=_is_cooldown_error(e) or _is_soft_stream_start_failure(e),
+                    )
                     released = True
                     if isinstance(e, HTTPStatusError) and e.status_code in (401, 403):
                         account.status = AccountStatus.EXPIRED
@@ -566,7 +909,7 @@ class AccountPool:
             finally:
                 # 兜底：客户端断连(GeneratorExit)/取消(CancelledError) 等路径也归还槽位（P0-4 防泄漏死锁）
                 if not released:
-                    await self.release(account, success=False)
+                    await self.release(account, success=None)
             if failover:
                 continue
 
@@ -584,12 +927,27 @@ class AccountPool:
     def _save_to_file(self):
         accounts_data = []
         for a in self._accounts:
-            accounts_data.append({
-                "id": a.id,
-                "psid": a.psid,
-                "psidts": a.psidts,
-                "label": a.label,
-            })
+            if a.auth_type == "oauth":
+                accounts_data.append({
+                    "id": a.id,
+                    "auth_type": "oauth",
+                    "oauth_type": a.oauth_type,
+                    "access_token": a.access_token,
+                    "refresh_token": a.refresh_token,
+                    "expires_at": a.expires_at,
+                    "project_id": a.project_id,
+                    "oauth_client_id": a.oauth_client_id,
+                    "oauth_client_secret": a.oauth_client_secret,
+                    "label": a.label,
+                })
+            else:
+                # Legacy Cookie records keep their original schema for bidirectional compatibility.
+                accounts_data.append({
+                    "id": a.id,
+                    "psid": a.psid,
+                    "psidts": a.psidts,
+                    "label": a.label,
+                })
         path = Path(settings.accounts_file)
         # 原子写：accounts.json 存 PSID 凭据，写入中途崩溃/断电不得截断成半截 JSON（VULN-010）。
         atomic_write_text(path, json.dumps({"accounts": accounts_data}, indent=2, ensure_ascii=False))

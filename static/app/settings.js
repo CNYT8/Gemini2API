@@ -37,6 +37,7 @@ function getFieldLabel(key) {
     refresh_interval: 'settings.field.refreshInterval',
     max_retries: 'settings.field.maxRetries',
     jitter_enabled: 'settings.field.jitterEnabled',
+    first_output_timeout: 'settings.field.firstOutputTimeout',
     rate_limit_enabled: 'settings.field.rateLimitEnabled',
     rate_limit_window: 'settings.field.rateLimitWindow',
     rate_limit_max: 'settings.field.rateLimitMax',

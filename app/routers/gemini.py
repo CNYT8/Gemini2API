@@ -7,7 +7,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.core.account_pool import account_pool as gemini_client
-from app.core.stream import split_into_chunks
+from app.core.stream import (
+    split_into_chunks,
+    prefetch_first_effective_stream_event,
+    stream_with_keepalive,
+)
 from app.models.gemini import (
     GeminiRequest,
     GeminiResponse,
@@ -241,17 +245,50 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
             has_tools = True
             prompt = build_tool_prompt(prompt, function_declarations)
 
+    use_sse = (request.query_params.get("alt") or "").lower() == "sse"
+    base = str(request.base_url).rstrip("/")
+
     async def stream_generator() -> AsyncGenerator[str, None]:
+        def _emit(payload: dict) -> str:
+            raw = json.dumps(payload)
+            if use_sse:
+                return f"data: {raw}\n\n"
+            return raw + "\n"
+
         def _chunk(text: str) -> str:
-            return json.dumps({
+            return _emit({
                 "candidates": [{
                     "content": {"parts": [{"text": text}], "role": "model"},
                     "index": 0,
                 }]
-            }) + "\n"
+            })
+
+        def _image_chunk(images: list) -> str | None:
+            parts = []
+            urls = "\n".join(
+                f"![generated image]({base}/images/{im['id']})"
+                for im in images if im.get("id")
+            )
+            if urls:
+                parts.append({"text": urls})
+            for im in images:
+                if im.get("b64"):
+                    parts.append({"inlineData": {
+                        "mimeType": im.get("mime", "image/png"),
+                        "data": im["b64"],
+                    }})
+            if not parts:
+                return None
+            return _emit({
+                "candidates": [{
+                    "content": {"parts": parts, "role": "model"},
+                    "index": 0,
+                }]
+            })
 
         prompt_tokens = estimate_tokens(prompt)
         response_text = ""
+        final_images = []
 
         # 有工具/附件：需完整文本，走非流式收集后切片（零回归）
         if has_tools or attachments:
@@ -259,20 +296,35 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
                 result = await gemini_client.generate(prompt, model, "", attachments,
                                                       gem_id=gem_id, account_id=gem_account_id)
             except Exception as e:
-                yield json.dumps({"error": {"message": str(e), "type": "api_error"}}) + "\n"
+                yield _emit({"error": {"message": str(e), "type": "api_error"}})
                 return
             response_text = result.get("text", "")
+            final_images = result.get("images") or []
             if has_tools:
                 parsed = parse_tool_response(response_text)
                 if isinstance(parsed, dict):
                     response_text = parsed.get("content", response_text)
             async for chunk in split_into_chunks(response_text):
                 yield _chunk(chunk)
+            image_frame = _image_chunk(final_images)
+            if image_frame:
+                yield image_frame
         else:
             # === 真流式路径（纯文本）===
             try:
-                async for evt in gemini_client.generate_stream(prompt, model, "", attachments,
-                                                                gem_id=gem_id, account_id=gem_account_id):
+                source = gemini_client.generate_stream(
+                    prompt, model, "", attachments,
+                    gem_id=gem_id, account_id=gem_account_id,
+                )
+                events = (
+                    stream_with_keepalive(source)
+                    if use_sse
+                    else await prefetch_first_effective_stream_event(source)
+                )
+                async for evt in events:
+                    if evt is None:
+                        yield ": ping\n\n"
+                        continue
                     if evt.get("type") == "delta":
                         # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                         delta = evt.get("text", "")
@@ -290,11 +342,15 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
                                 yield _chunk(tail)
                         else:
                             response_text = final_text
+                        final_images = evt.get("images") or []
             except Exception as e:
                 # generate_stream 在 HTTP>=400 时抛 HTTPStatusError（非 RuntimeError/ValueError 子类），
                 # 故这里捕获 Exception，与 openai/claude 真流式路径一致，避免击穿生成器
-                yield json.dumps({"error": {"message": str(e), "type": "api_error"}}) + "\n"
+                yield _emit({"error": {"message": str(e), "type": "api_error"}})
                 return
+            image_frame = _image_chunk(final_images)
+            if image_frame:
+                yield image_frame
 
         completion_tokens = estimate_tokens(response_text)
 
@@ -318,6 +374,8 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
                 "totalTokenCount": prompt_tokens + completion_tokens,
             },
         }
-        yield json.dumps(final_chunk) + "\n"
+        yield _emit(final_chunk)
 
-    return StreamingResponse(stream_generator(), media_type="application/json")
+    media_type = "text/event-stream" if use_sse else "application/json"
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"} if use_sse else None
+    return StreamingResponse(stream_generator(), media_type=media_type, headers=headers)

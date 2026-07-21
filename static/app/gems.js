@@ -24,7 +24,7 @@ export async function loadAccountsThenGems() {
     try {
         const data = await apiCall('GET', '/admin/accounts');
         const sel = document.getElementById('gem-account-select');
-        const accounts = data.accounts || [];
+        const accounts = (data.accounts || []).filter(a => a.auth_type !== 'oauth');
         sel.innerHTML = accounts.map(a =>
             `<option value="${escapeAttr(a.id)}">${escapeHtml(a.label || a.id)}</option>`).join('');
         currentAccount = accounts[0]?.id || '';

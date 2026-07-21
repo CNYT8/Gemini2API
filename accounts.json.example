@@ -11,6 +11,16 @@
       "psid": "your__Secure-1PSID_cookie_value_2",
       "psidts": "your__Secure-1PSIDTS_cookie_value_2",
       "label": "Account 2"
+    },
+    {
+      "id": "account-2",
+      "auth_type": "oauth",
+      "oauth_type": "code_assist",
+      "access_token": "your_google_oauth_access_token",
+      "refresh_token": "your_google_oauth_refresh_token",
+      "expires_at": 0,
+      "project_id": "your_google_cloud_project_id",
+      "label": "Gemini CLI"
     }
   ]
 }

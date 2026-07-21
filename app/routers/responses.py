@@ -12,6 +12,7 @@ from app.core.gemini_client import GEMINI_MODELS, _resolve_model
 from app.core.responses_protocol import (
     parse_responses_input, build_responses_object, new_response_id, ResponsesStreamEncoder,
 )
+from app.core.stream import stream_with_keepalive
 from app.routers.openai import _images_to_markdown
 from app.utils.tools import build_tool_prompt, parse_tool_response, estimate_tokens
 from app.utils.prompt import build_prompt_from_messages, extract_attachments
@@ -152,11 +153,11 @@ async def _stream_gemini_response(request, prompt, model, has_tools, attachments
                                   gem_account_id, request_params):
     response_id = new_response_id()
     enc = ResponsesStreamEncoder(response_id, model, request_params)
-    yield enc.created()
-    yield enc.in_progress()
 
     if has_tools or attachments:
         # 工具调用/附件：需要完整文本才能判断，走非流式收集（同 openai.py 的 buffered 门禁）
+        yield enc.created()
+        yield enc.in_progress()
         try:
             result = await gemini_client.generate(prompt, model, "", attachments,
                                                   gem_id=gem_id, account_id=gem_account_id)
@@ -185,15 +186,29 @@ async def _stream_gemini_response(request, prompt, model, has_tools, attachments
         yield enc.completed(output, usage)
         return
 
-    # 真流式路径：无工具/附件，逐块转发
+    # 真流式路径：无工具/附件，逐块转发。等待期间只发 SSE comment 保活，
+    # 首个有效上游事件到达后才提交 Responses 生命周期事件。
+    events = stream_with_keepalive(
+        gemini_client.generate_stream(
+            prompt, model, "", attachments,
+            gem_id=gem_id, account_id=gem_account_id,
+        )
+    )
     msg_id = f"msg_{uuid.uuid4().hex}"
-    for frame in enc.text_message_start(msg_id, 0):
-        yield frame
     full_text = ""
     final_images = []
+    protocol_started = False
     try:
-        async for evt in gemini_client.generate_stream(prompt, model, "", attachments,
-                                                        gem_id=gem_id, account_id=gem_account_id):
+        async for evt in events:
+            if evt is None:
+                yield ": ping\n\n"
+                continue
+            if not protocol_started:
+                yield enc.created()
+                yield enc.in_progress()
+                for frame in enc.text_message_start(msg_id, 0):
+                    yield frame
+                protocol_started = True
             if evt.get("type") == "delta":
                 delta = evt.get("text", "")
                 if delta:
@@ -208,12 +223,18 @@ async def _stream_gemini_response(request, prompt, model, has_tools, attachments
                 full_text = final_text
                 final_images = evt.get("images") or []
     except Exception as e:
+        if not protocol_started:
+            yield enc.created()
+            yield enc.in_progress()
         yield enc.failed(str(e))
         return
 
     if final_images:
         md = _images_to_markdown(final_images, request)
-        full_text = (md + "\n" + full_text.strip()) if full_text.strip() else md
+        tail = ("\n" + md) if full_text.strip() else md
+        if tail:
+            yield enc.text_delta(msg_id, 0, tail)
+            full_text += tail
 
     for frame in enc.text_message_end(msg_id, 0, full_text):
         yield frame

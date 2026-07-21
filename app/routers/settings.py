@@ -16,6 +16,7 @@ _NON_NEGATIVE_FIELDS = {
     "rate_limit_window",
     "rate_limit_max",
     "health_check_interval",
+    "first_output_timeout",
     "usage_stats_interval",
     "usage_stats_retention_days",
     "chat_cleanup_keep_hours",
@@ -38,6 +39,7 @@ EDITABLE_FIELDS = {
     "rate_limit_max",
     "health_check_enabled",
     "health_check_interval",
+    "first_output_timeout",
     "rotation_strategy",
     "max_concurrent_per_account",
     "usage_stats_enabled",
@@ -60,6 +62,7 @@ FIELD_TYPES = {
     "rate_limit_max": int,
     "health_check_enabled": bool,
     "health_check_interval": int,
+    "first_output_timeout": int,
     "rotation_strategy": str,
     "max_concurrent_per_account": int,
     "usage_stats_enabled": bool,
@@ -104,6 +107,7 @@ def _get_grouped_settings() -> Dict[str, Dict[str, Any]]:
             "refresh_interval": settings.refresh_interval,
             "max_retries": settings.max_retries,
             "jitter_enabled": settings.jitter_enabled,
+            "first_output_timeout": settings.first_output_timeout,
         },
         "rate_limiting": {
             "rate_limit_enabled": settings.rate_limit_enabled,
@@ -245,6 +249,11 @@ def _validate_settings_domain(updates: Dict[str, Any]) -> None:
             raise HTTPException(
                 status_code=400,
                 detail=f"Setting '{key}' must be >= 1",
+            )
+        if key == "first_output_timeout" and value != 0 and not 30 <= value <= 600:
+            raise HTTPException(
+                status_code=400,
+                detail="Setting 'first_output_timeout' must be 0 or between 30 and 600",
             )
 
     # rotation_strategy 必须是 RotationStrategy 枚举的合法成员，否则下次启动时

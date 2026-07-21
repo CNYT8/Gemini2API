@@ -332,6 +332,10 @@ async function loadAccounts() {
         container.innerHTML = accounts.map(account => {
             const idEsc = escapeAttr(account.id);
             const labelEsc = escapeAttr(account.label || '');
+            const isOAuth = account.auth_type === 'oauth';
+            const authLabel = isOAuth
+                ? (account.oauth_type === 'ai_studio' ? 'OAuth / API' : 'OAuth / CLI')
+                : '网页 Cookie';
             return `
             <div class="account-card">
                 <div class="account-card-header">
@@ -342,8 +346,14 @@ async function loadAccounts() {
                     ${getStatusBadge(account.status)}
                 </div>
                 <div class="account-detail">
-                    <span class="label">PSID</span>
-                    <span class="value">${escapeHtml(maskString(account.psid || '', 12))}</span>
+                    <span class="label">账号类型</span>
+                    <span class="value">${authLabel}</span>
+                </div>
+                <div class="account-detail">
+                    <span class="label">${isOAuth ? 'OAuth Token' : 'PSID'}</span>
+                    <span class="value">${isOAuth
+                        ? (account.access_token_configured ? '已配置' : '未配置')
+                        : escapeHtml(maskString(account.psid || '', 12))}</span>
                 </div>
                 <div class="account-detail">
                     <span class="label">${t('accounts.requests')}</span>
@@ -361,9 +371,13 @@ async function loadAccounts() {
                     <button class="btn btn-sm btn-outline acc-check-btn" data-account-id="${idEsc}">
                         <i class="fas fa-heartbeat"></i> ${t('accounts.check')}
                     </button>
+                    ${isOAuth ? `
+                    <button class="btn btn-sm btn-outline acc-oauth-btn" data-account-id="${idEsc}" data-account-label="${labelEsc}" data-project-id="${escapeAttr(account.project_id || '')}">
+                        <i class="fas fa-key"></i> 更新 OAuth
+                    </button>` : `
                     <button class="btn btn-sm btn-outline acc-cookie-btn" data-account-id="${idEsc}" data-account-label="${labelEsc}">
                         <i class="fas fa-cookie-bite"></i> ${t('accounts.updateCookie')}
-                    </button>
+                    </button>`}
                     <button class="btn btn-sm btn-danger acc-remove-btn" data-account-id="${idEsc}">
                         <i class="fas fa-trash"></i> ${t('accounts.delete')}
                     </button>
@@ -378,6 +392,13 @@ async function loadAccounts() {
         });
         container.querySelectorAll('.acc-cookie-btn').forEach(btn => {
             btn.addEventListener('click', () => openUpdateCookieModal(btn.dataset.accountId, btn.dataset.accountLabel || ''));
+        });
+        container.querySelectorAll('.acc-oauth-btn').forEach(btn => {
+            btn.addEventListener('click', () => openUpdateOAuthModal(
+                btn.dataset.accountId,
+                btn.dataset.accountLabel || '',
+                btn.dataset.projectId || ''
+            ));
         });
         container.querySelectorAll('.acc-remove-btn').forEach(btn => {
             btn.addEventListener('click', () => removeAccount(btn.dataset.accountId));
@@ -423,7 +444,21 @@ async function removeAccount(accountId) {
 
 function openAddAccountModal() {
     const modal = document.getElementById('addAccountModal');
-    if (modal) modal.classList.add('active');
+    if (modal) {
+        syncAddAccountFields();
+        modal.classList.add('active');
+    }
+}
+
+function syncAddAccountFields() {
+    const authType = document.getElementById('add-auth-type')?.value || 'cookie';
+    const oauthType = document.getElementById('add-oauth-type')?.value || 'code_assist';
+    const cookieFields = document.getElementById('add-cookie-fields');
+    const oauthFields = document.getElementById('add-oauth-fields');
+    const projectField = document.getElementById('add-project-field');
+    if (cookieFields) cookieFields.hidden = authType !== 'cookie';
+    if (oauthFields) oauthFields.hidden = authType !== 'oauth';
+    if (projectField) projectField.hidden = oauthType !== 'code_assist';
 }
 
 function closeAddAccountModal() {
@@ -432,28 +467,110 @@ function closeAddAccountModal() {
         modal.classList.remove('active');
         const inputs = modal.querySelectorAll('input');
         inputs.forEach(input => { input.value = ''; });
+        const authType = document.getElementById('add-auth-type');
+        const oauthType = document.getElementById('add-oauth-type');
+        if (authType) authType.value = 'cookie';
+        if (oauthType) oauthType.value = 'code_assist';
+        syncAddAccountFields();
     }
 }
 
 async function submitAddAccount() {
-    const psid = document.getElementById('add-psid')?.value.trim();
+    const authType = document.getElementById('add-auth-type')?.value || 'cookie';
+    const oauthType = document.getElementById('add-oauth-type')?.value || 'code_assist';
+    const psid = document.getElementById('add-psid')?.value.trim() || '';
     const psidts = document.getElementById('add-psidts')?.value.trim() || '';
     const label = document.getElementById('add-label')?.value.trim() || '';
+    const accessToken = document.getElementById('add-access-token')?.value.trim() || '';
+    const refreshToken = document.getElementById('add-refresh-token')?.value.trim() || '';
+    const projectId = document.getElementById('add-project-id')?.value.trim() || '';
+    const oauthClientId = document.getElementById('add-oauth-client-id')?.value.trim() || '';
+    const oauthClientSecret = document.getElementById('add-oauth-client-secret')?.value.trim() || '';
 
-    if (!psid) {
+    if (authType === 'cookie' && !psid) {
         showToast('请填写 __Secure-1PSID', 'warning');
         return;
     }
-
+    if (authType === 'oauth' && !accessToken && !refreshToken) {
+        showToast('请填写 OAuth Token', 'warning');
+        return;
+    }
     try {
         showToast(t('accounts.adding'), 'info');
-        await apiCall('POST', '/admin/accounts', { psid, psidts, label });
+        await apiCall('POST', '/admin/accounts', {
+            auth_type: authType,
+            psid,
+            psidts,
+            label,
+            oauth_type: oauthType,
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            project_id: projectId,
+            oauth_client_id: oauthClientId,
+            oauth_client_secret: oauthClientSecret
+        });
         showToast(t('accounts.added'), 'success');
         closeAddAccountModal();
         await loadAccounts();
         await loadDashboard();
     } catch (error) {
         showToast(`${t('accounts.addFailed')}: ${error.message}`, 'error');
+    }
+}
+
+// ============================================================================
+// Update OAuth Modal
+// ============================================================================
+
+let updateOAuthAccountId = null;
+
+function openUpdateOAuthModal(accountId, label, projectId) {
+    updateOAuthAccountId = accountId;
+    const modal = document.getElementById('updateOAuthModal');
+    const title = document.getElementById('updateOAuthTitle');
+    const project = document.getElementById('update-project-id');
+    if (title) title.textContent = `更新 OAuth - ${label || accountId}`;
+    if (project) project.value = projectId || '';
+    if (modal) modal.classList.add('active');
+}
+
+function closeUpdateOAuthModal() {
+    const modal = document.getElementById('updateOAuthModal');
+    if (modal) {
+        modal.classList.remove('active');
+        const inputs = modal.querySelectorAll('input');
+        inputs.forEach(input => { input.value = ''; });
+    }
+    updateOAuthAccountId = null;
+}
+
+async function submitUpdateOAuth() {
+    const accessToken = document.getElementById('update-access-token')?.value.trim() || '';
+    const refreshToken = document.getElementById('update-refresh-token')?.value.trim() || '';
+    const projectId = document.getElementById('update-project-id')?.value.trim() || '';
+    const oauthClientId = document.getElementById('update-oauth-client-id')?.value.trim() || '';
+    const oauthClientSecret = document.getElementById('update-oauth-client-secret')?.value.trim() || '';
+    if (!accessToken) {
+        showToast('请填写 Access Token', 'warning');
+        return;
+    }
+    if (!updateOAuthAccountId) {
+        showToast('未选择账号', 'error');
+        return;
+    }
+    const payload = { access_token: accessToken, project_id: projectId };
+    if (refreshToken) payload.refresh_token = refreshToken;
+    if (oauthClientId) payload.oauth_client_id = oauthClientId;
+    if (oauthClientSecret) payload.oauth_client_secret = oauthClientSecret;
+    try {
+        showToast('正在更新 OAuth...', 'info');
+        await apiCall('PUT', `/admin/accounts/${updateOAuthAccountId}/oauth`, payload);
+        showToast('OAuth 更新成功', 'success');
+        closeUpdateOAuthModal();
+        await loadAccounts();
+        await loadDashboard();
+    } catch (error) {
+        showToast(`更新失败: ${error.message}`, 'error');
     }
 }
 
@@ -976,6 +1093,10 @@ function initEventListeners() {
     if (confirmBtn) {
         confirmBtn.addEventListener('click', submitAddAccount);
     }
+    const authTypeSelect = document.getElementById('add-auth-type');
+    const oauthTypeSelect = document.getElementById('add-oauth-type');
+    if (authTypeSelect) authTypeSelect.addEventListener('change', syncAddAccountFields);
+    if (oauthTypeSelect) oauthTypeSelect.addEventListener('change', syncAddAccountFields);
 
     // Add account modal close buttons
     const addModal = document.getElementById('addAccountModal');
@@ -1000,6 +1121,21 @@ function initEventListeners() {
         const confirmUpdateBtn = document.getElementById('confirmUpdateCookie');
         if (confirmUpdateBtn) {
             confirmUpdateBtn.addEventListener('click', submitUpdateCookie);
+        }
+    }
+
+    // Update OAuth modal
+    const updateOAuthModal = document.getElementById('updateOAuthModal');
+    if (updateOAuthModal) {
+        updateOAuthModal.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+            btn.addEventListener('click', closeUpdateOAuthModal);
+        });
+        updateOAuthModal.addEventListener('click', (e) => {
+            if (e.target === updateOAuthModal) closeUpdateOAuthModal();
+        });
+        const confirmUpdateOAuth = document.getElementById('confirmUpdateOAuth');
+        if (confirmUpdateOAuth) {
+            confirmUpdateOAuth.addEventListener('click', submitUpdateOAuth);
         }
     }
 
@@ -1141,6 +1277,8 @@ window.app = {
     closeAddAccountModal,
     openUpdateCookieModal,
     closeUpdateCookieModal,
+    openUpdateOAuthModal,
+    closeUpdateOAuthModal,
     sendPlaygroundRequest,
     clearPlayground,
     copyModel,

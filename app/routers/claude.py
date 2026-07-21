@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.core.account_pool import account_pool as gemini_client
-from app.core.stream import split_into_chunks, format_sse
+from app.core.stream import split_into_chunks, format_sse, stream_with_keepalive
 from app.models.claude import (
     ClaudeRequest, ClaudeResponse, ContentBlock, ClaudeUsage,
     ClaudeModelInfo, ClaudeModelList,
@@ -199,27 +199,36 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
         return
 
     # === 真流式路径（纯文本）===
-    yield format_sse({
-        "type": "message_start",
-        "message": {
-            "id": msg_id,
-            "type": "message",
-            "role": "assistant",
-            "content": [],
-            "model": model_name,
-            "usage": {"input_tokens": estimate_tokens(prompt), "output_tokens": 0},
-        },
-    })
-    yield format_sse({
-        "type": "content_block_start",
-        "index": 0,
-        "content_block": {"type": "text", "text": ""},
-    })
-
     full_text = ""
+    protocol_started = False
     try:
-        async for evt in gemini_client.generate_stream(prompt, model, "", attachments,
-                                                        gem_id=gem_id, account_id=account_id):
+        events = stream_with_keepalive(
+            gemini_client.generate_stream(
+                prompt, model, "", attachments, gem_id=gem_id, account_id=account_id,
+            )
+        )
+        async for evt in events:
+            if evt is None:
+                yield ": ping\n\n"
+                continue
+            if not protocol_started:
+                yield format_sse({
+                    "type": "message_start",
+                    "message": {
+                        "id": msg_id,
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [],
+                        "model": model_name,
+                        "usage": {"input_tokens": estimate_tokens(prompt), "output_tokens": 0},
+                    },
+                })
+                yield format_sse({
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {"type": "text", "text": ""},
+                })
+                protocol_started = True
             if evt.get("type") == "delta":
                 # generate_stream 现在是严格 append-only（不再发 _replace），delta 总是新增尾部
                 delta = evt.get("text", "")
@@ -246,6 +255,9 @@ async def _stream_claude(prompt: str, model: str, has_tools: bool, attachments=N
                 else:
                     full_text = final_text
     except Exception as e:
+        if not protocol_started:
+            yield format_sse({"type": "error", "error": {"type": "api_error", "message": str(e)}})
+            return
         yield format_sse({
             "type": "content_block_delta",
             "index": 0,
@@ -334,4 +346,3 @@ async def _stream_claude_buffered(prompt: str, model: str, has_tools: bool, atta
     })
 
     yield format_sse({"type": "message_stop"})
-

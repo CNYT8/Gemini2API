@@ -25,21 +25,97 @@
         </div>
         <div class="modal-body">
             <div class="form-group">
+                <label for="add-auth-type">账号类型</label>
+                <select id="add-auth-type" class="form-control">
+                    <option value="cookie">网页 Cookie</option>
+                    <option value="oauth">OAuth / API / CLI</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label for="add-label" data-i18n="accounts.labelName">标签名称</label>
                 <input type="text" id="add-label" class="form-control" data-i18n-placeholder="accounts.labelPlaceholder" placeholder="例如: 主账号">
             </div>
-            <div class="form-group">
-                <label for="add-psid">__Secure-1PSID <span class="required">*</span></label>
-                <input type="text" id="add-psid" class="form-control" data-i18n-placeholder="accounts.psidPlaceholder" placeholder="输入 __Secure-1PSID" required>
+            <div id="add-cookie-fields">
+                <div class="form-group">
+                    <label for="add-psid">__Secure-1PSID <span class="required">*</span></label>
+                    <input type="text" id="add-psid" class="form-control" data-i18n-placeholder="accounts.psidPlaceholder" placeholder="输入 __Secure-1PSID">
+                </div>
+                <div class="form-group">
+                    <label for="add-psidts">__Secure-1PSIDTS</label>
+                    <input type="text" id="add-psidts" class="form-control" data-i18n-placeholder="accounts.psidtsPlaceholder" placeholder="输入 __Secure-1PSIDTS">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="add-psidts">__Secure-1PSIDTS <span class="required">*</span></label>
-                <input type="text" id="add-psidts" class="form-control" data-i18n-placeholder="accounts.psidtsPlaceholder" placeholder="输入 __Secure-1PSIDTS" required>
+            <div id="add-oauth-fields" hidden>
+                <div class="form-group">
+                    <label for="add-oauth-type">OAuth 模式</label>
+                    <select id="add-oauth-type" class="form-control">
+                        <option value="code_assist">Gemini CLI / Code Assist</option>
+                        <option value="ai_studio">Gemini API / AI Studio</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="add-access-token">Access Token</label>
+                    <input type="password" id="add-access-token" class="form-control" autocomplete="off" placeholder="ya29...">
+                </div>
+                <div class="form-group">
+                    <label for="add-refresh-token">Refresh Token</label>
+                    <input type="password" id="add-refresh-token" class="form-control" autocomplete="off">
+                </div>
+                <div class="form-group" id="add-project-field">
+                    <label for="add-project-id">Project ID</label>
+                    <input type="text" id="add-project-id" class="form-control" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="add-oauth-client-id">OAuth Client ID</label>
+                    <input type="text" id="add-oauth-client-id" class="form-control" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="add-oauth-client-secret">OAuth Client Secret</label>
+                    <input type="password" id="add-oauth-client-secret" class="form-control" autocomplete="off">
+                </div>
             </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary modal-cancel" data-i18n="confirm.cancel">取消</button>
             <button class="btn btn-primary" id="confirmAddAccount" data-i18n="accounts.confirmAdd">确认添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- Update OAuth Modal -->
+<div id="updateOAuthModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="updateOAuthTitle">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="updateOAuthTitle">更新 OAuth</h3>
+            <button class="modal-close" aria-label="Close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="update-access-token">Access Token <span class="required">*</span></label>
+                <input type="password" id="update-access-token" class="form-control" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="update-refresh-token">Refresh Token</label>
+                <input type="password" id="update-refresh-token" class="form-control" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="update-project-id">Project ID</label>
+                <input type="text" id="update-project-id" class="form-control" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="update-oauth-client-id">OAuth Client ID</label>
+                <input type="text" id="update-oauth-client-id" class="form-control" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="update-oauth-client-secret">OAuth Client Secret</label>
+                <input type="password" id="update-oauth-client-secret" class="form-control" autocomplete="off">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel" data-i18n="confirm.cancel">取消</button>
+            <button class="btn btn-primary" id="confirmUpdateOAuth">确认更新</button>
         </div>
     </div>
 </div>

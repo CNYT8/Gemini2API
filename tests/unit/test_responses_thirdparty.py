@@ -193,6 +193,45 @@ def test_stream_dispatch_converts_provider_sse_to_responses_events(monkeypatch):
     assert "[DONE]" not in body
 
 
+def test_stream_dispatch_accepts_standard_sse_event_field(monkeypatch):
+    import app.core.responses_thirdparty as rt
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    async def _fake_body():
+        yield 'event: chat.completion.chunk\ndata: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'
+        yield "event: done\ndata: [DONE]\n\n"
+
+    async def fake_open_stream(entry, messages, req):
+        return StreamingResponse(_fake_body(), media_type="text/event-stream"), None
+
+    class _FakeEntry:
+        id = "e1"
+
+    class _FakePool:
+        def update_last_used(self, entry_id):
+            pass
+        def mark_unhealthy(self, entry_id, cooldown):
+            pass
+
+    monkeypatch.setattr(rt, "open_stream", fake_open_stream)
+
+    async def _collect():
+        gen = rt._dispatch_stream(
+            request=None, resolved_model="deepseek-chat",
+            messages_raw=[{"role": "user", "content": "hi"}], tools_raw=[], tool_choice=None,
+            request_params={}, entries=[_FakeEntry()], pool=_FakePool(),
+        )
+        out = []
+        async for frame in gen:
+            out.append(frame)
+        return "".join(out)
+
+    body = asyncio.run(_collect())
+    assert "response.output_text.delta" in body
+    assert '"delta": "Hi"' in body
+
+
 def test_dispatch_thirdparty_responses_stream_returns_streaming_response(monkeypatch):
     """回归测试：dispatch_thirdparty_responses(stream=True) 是真正的调用入口——
     之前 _dispatch_stream 被改成 async generator 后，入口处仍 `await` 它，

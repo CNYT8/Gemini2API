@@ -201,14 +201,8 @@ async def _proxy_openai_stream(
                                             "type": "api_error"}}
                     yield f"data: {json.dumps(detail)}\n\n"
                     return
-                async for line in response.aiter_lines():
-                    # 修复：aiter_lines() 基于 splitlines() 已剥离行尾，并把 SSE 事件分隔的空行
-                    # 作为 "" 单独产出。原代码 `yield f"{line}\n"` 丢弃空行且只补一个 \n，
-                    # 导致下游收到的多个 data: 行之间没有空行分隔，被合并成一个未结束的事件，
-                    # 严格 SSE 客户端无法增量解析。这里对每个非空行补回 "\n\n"（含 data: [DONE]），
-                    # 恢复合法的 SSE 事件帧。
-                    if line.strip():
-                        yield f"{line}\n\n"
+                async for frame in _iter_sse_frames(response):
+                    yield frame
     except httpx.RequestError as e:
         logger.error(f"Request error streaming from {provider}: {e}")
         yield f"data: {json.dumps({'error': {'message': f'Failed to connect to {provider}: {e}', 'type': 'connection_error'}})}\n\n"
@@ -257,9 +251,8 @@ async def open_openai_stream(
 
     async def _drain():
         try:
-            async for line in response.aiter_lines():
-                if line.strip():
-                    yield f"{line}\n\n"
+            async for frame in _iter_sse_frames(response):
+                yield frame
         finally:
             await cm.__aexit__(None, None, None)
             await client.aclose()
@@ -269,6 +262,51 @@ async def open_openai_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     ), None
+
+
+async def _iter_sse_frames(response: httpx.Response) -> AsyncGenerator[str, None]:
+    """按完整 SSE 事件帧转发上游流，保留 event/comment/multi-data 行。
+
+    早期实现按非空行强行补 ``\n\n``，对 OpenAI 单 data 行可用，但会把标准 SSE
+    的 ``event: ...`` + ``data: ...`` 或多行 data 拆成多个事件。这里优先按上游空行
+    分隔提交完整事件；对少数只用单换行分隔的 OpenAI 兼容流，仍保留旧的宽容拆帧。
+    """
+    pending: list[str] = []
+    async for line in response.aiter_lines():
+        if line == "":
+            if pending:
+                yield "\n".join(pending) + "\n\n"
+                pending = []
+            continue
+        if _should_flush_openai_line_frame(pending, line):
+            yield "\n".join(pending) + "\n\n"
+            pending = []
+        pending.append(line)
+    if pending:
+        yield "\n".join(pending) + "\n\n"
+
+
+def _should_flush_openai_line_frame(pending: list[str], next_line: str) -> bool:
+    """兼容非标准的 line-delimited OpenAI SSE，同时不拆标准 event/data 帧。"""
+    return (
+        len(pending) == 1
+        and _is_complete_openai_data_line(pending[0])
+        and next_line.lstrip().startswith("data:")
+    )
+
+
+def _is_complete_openai_data_line(line: str) -> bool:
+    line = line.lstrip()
+    if not line.startswith("data:"):
+        return False
+    payload = line[len("data:"):].lstrip()
+    if payload == "[DONE]":
+        return True
+    try:
+        json.loads(payload)
+    except Exception:
+        return False
+    return True
 
 
 async def open_stream(

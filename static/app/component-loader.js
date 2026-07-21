@@ -87,7 +87,7 @@ async function initializeComponents() {
         // 最后加载所有 section 组件
         const sectionComponents = [
             { path: `${basePath}section-dashboard.html`, container: '#content-container', position: 'beforeend' },
-            { path: `${basePath}section-accounts.html`, container: '#content-container', position: 'beforeend' },
+            { path: `${basePath}section-accounts.html?v=4`, container: '#content-container', position: 'beforeend' },
                 { path: `${basePath}section-playground.html`, container: '#content-container', position: 'beforeend' },
             { path: `${basePath}section-usage-stats.html`, container: '#content-container', position: 'beforeend' },
             { path: `${basePath}section-logs.html`, container: '#content-container', position: 'beforeend' },

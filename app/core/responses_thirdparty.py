@@ -56,6 +56,17 @@ def _chat_response_to_responses_object(chat_body: dict, model: str, request_para
                                   request_params=request_params, usage=usage)
 
 
+def _sse_data_payload(frame: str) -> str:
+    """从一个完整 SSE frame 中取 data payload；兼容 event/comment/multi-data 行。"""
+    data_lines = []
+    for raw_line in frame.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("data:"):
+            continue
+        data_lines.append(line[len("data:"):].lstrip())
+    return "\n".join(data_lines).strip()
+
+
 async def _dispatch_non_stream(request, resolved_model, messages_raw, tools_raw, tool_choice,
                                request_params, entries, pool):
     chat_req = ChatRequest(model=resolved_model, messages=_to_chat_messages(messages_raw),
@@ -137,10 +148,9 @@ async def _dispatch_stream(request, resolved_model, messages_raw, tools_raw, too
         buf += raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
         while "\n\n" in buf:
             frame, buf = buf.split("\n\n", 1)
-            line = frame.strip()
-            if not line.startswith("data:"):
+            payload = _sse_data_payload(frame)
+            if not payload:
                 continue
-            payload = line[len("data:"):].strip()
             if payload == "[DONE]":
                 continue
             try:
