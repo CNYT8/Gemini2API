@@ -308,18 +308,23 @@ Chat endpoints return a locally hosted image URL (such as `http://localhost:5918
 
 ## Supported Models
 
-Gemini2API provides 3 fixed stable model names that never change. These serve as the API contract, allowing clients to use them long-term without worrying about model name changes:
+The built-in Gemini catalog is aligned with Sub2API's Gemini API/CLI platform:
 
 | Model ID | Description |
 |----------|-------------|
-| `gemini-pro` | Pro model with strongest performance, suitable for complex tasks |
-| `gemini-flash` | Fast model with low latency, suitable for real-time applications |
-| `gemini-flash-thinking` | Thinking model supporting deep reasoning and analysis |
+| `gemini-2.0-flash` | Default general-purpose and account-test model |
+| `gemini-2.5-flash` | Fast general-purpose model |
+| `gemini-2.5-flash-image` | Gemini 2.5 image generation model |
+| `gemini-2.5-pro` | Higher-quality Pro model |
+| `gemini-3.5-flash` | Gemini 3.5 Flash model |
+| `gemini-3-flash-preview` | Gemini 3 Flash preview |
+| `gemini-3-pro-preview` | Gemini 3 Pro preview |
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro preview |
+| `gemini-3.1-flash-image` | Gemini 3.1 image generation model |
 
-**Internal Auto-Mapping**: The service automatically maps these fixed names to the actual available models based on your Google account subscription level (Advanced/Plus/Basic). Regardless of account tier changes, Google rollouts, or service restarts, clients always use these 3 fixed names without modification.
+The native Gemini model endpoint additionally recognizes `gemini-3.1-pro-preview-customtools`, matching Sub2API's Code Assist compatibility route.
 
-**Legacy Alias Compatibility**: For backward compatibility, older model names are still supported:
-- `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-2.0-flash-thinking`, etc.
+**Account-aware routing**: OAuth API/CLI accounts receive concrete model IDs unchanged. Cookie accounts map them to the account's currently available Pro/Flash web family. Legacy names such as `gemini-pro`, `gemini-flash`, and `gemini-flash-thinking` remain accepted for backward compatibility.
 
 ### Third-Party Models
 

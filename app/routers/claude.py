@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.core.account_pool import account_pool as gemini_client
+from app.core.gemini_models import DEFAULT_GEM_MODEL, normalize_catalog_model
 from app.core.stream import split_into_chunks, format_sse, stream_with_keepalive
 from app.models.claude import (
     ClaudeRequest, ClaudeResponse, ContentBlock, ClaudeUsage,
@@ -27,7 +28,7 @@ def _apply_model_whitelist(models: list[str]) -> list[str]:
     raw = (settings.model_whitelist or "").strip()
     if not raw:
         return models
-    allowed = {m.strip() for m in raw.split(",") if m.strip()}
+    allowed = {normalize_catalog_model(m) for m in raw.split(",") if m.strip()}
     if not allowed:
         return models
     return [m for m in models if m in allowed]
@@ -85,7 +86,7 @@ async def create_message(req: ClaudeRequest, request: Request):
         if gem_info:
             gem_id = gem_info.get("gem_id")
             gem_account_id = gem_info.get("account_id") or None
-            resolved_model = gem_info.get("base_model") or "gemini-pro"
+            resolved_model = gem_info.get("base_model") or DEFAULT_GEM_MODEL
 
     has_tools = bool(req.tools)
     # 生图意图优先：带 tools 但明确生图意图时跳过工具模拟，直接生图（否则生图被压制）

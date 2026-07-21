@@ -63,10 +63,11 @@ class GeminiResponse(BaseModel):
 
 class GeminiModelInfo(BaseModel):
     name: str
-    display_name: str = ""
+    display_name: str = Field(default="", serialization_alias="displayName")
     description: str = ""
     supported_generation_methods: list[str] = Field(
-        default_factory=lambda: ["generateContent", "streamGenerateContent"]
+        default_factory=lambda: ["generateContent", "streamGenerateContent"],
+        serialization_alias="supportedGenerationMethods",
     )
 
 

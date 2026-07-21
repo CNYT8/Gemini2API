@@ -241,6 +241,14 @@
     margin-left: 0.25rem;
 }
 
+.form-field-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
 .form-control {
     width: 100%;
     padding: 0.75rem;
@@ -263,6 +271,143 @@
     color: var(--text-tertiary);
 }
 
+#addAccountModal .modal-content,
+#updateOAuthModal .modal-content {
+    max-width: 560px;
+}
+
+.oauth-field-hint {
+    margin: -0.75rem 0 1.25rem;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.oauth-account-type {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.oauth-method-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+}
+
+.oauth-method-switch label {
+    position: relative;
+    margin: 0;
+    cursor: pointer;
+}
+
+.oauth-method-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.oauth-method-switch span {
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-align: center;
+    transition: var(--transition);
+}
+
+.oauth-method-switch input:checked + span {
+    background: var(--bg-primary);
+    color: var(--primary-color);
+    box-shadow: var(--shadow-sm);
+}
+
+.oauth-method-switch input:focus-visible + span {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
+.oauth-browser-fields {
+    margin-top: 0.25rem;
+}
+
+.oauth-generate-btn {
+    width: 100%;
+    justify-content: center;
+}
+
+.oauth-browser-result {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.oauth-url-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 42px auto;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.oauth-url-row .form-control {
+    min-width: 0;
+    font-family: monospace;
+    font-size: 0.75rem;
+}
+
+.oauth-icon-btn {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.oauth-open-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.oauth-code-input {
+    min-height: 76px;
+    resize: vertical;
+    font-family: monospace;
+    line-height: 1.45;
+}
+
+.oauth-flow-status {
+    margin: 1rem 0 0;
+    padding: 0.75rem;
+    border-left: 3px solid var(--primary-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+.oauth-flow-status.success {
+    border-left-color: var(--success-color);
+    color: var(--success-text);
+}
+
+.oauth-flow-status.error {
+    border-left-color: var(--danger-color);
+    color: var(--danger-color);
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
     .accounts-grid {
@@ -271,6 +416,14 @@
 
     .modal-content {
         width: 95%;
+    }
+
+    .oauth-url-row {
+        grid-template-columns: minmax(0, 1fr) 42px;
+    }
+
+    .oauth-open-btn {
+        grid-column: 1 / -1;
     }
 }
 

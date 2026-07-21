@@ -2,7 +2,7 @@
  * Gemini2API 管理面板 - 主应用入口
  */
 
-import { initializeComponents } from './component-loader.js';
+import { initializeComponents } from './component-loader.js?v=3';
 import { initThemeSwitcher } from './theme-switcher.js';
 import { initAuth, apiCall, logout } from './auth.js';
 import { showToast, formatNumber, getStatusBadge, maskString, copyToClipboard, showConfirm } from './utils.js';
@@ -13,6 +13,15 @@ import { initApiKeys, loadApiKeys } from './api-keys.js';
 import { initGems, loadAccountsThenGems } from './gems.js';
 import { initI18n, t } from './i18n.js';
 import { initLanguageSwitcher } from './language-switcher.js';
+import {
+    getOAuthMethod,
+    getOAuthToken,
+    initGeminiOAuthFlow,
+    isOAuthAuthorized,
+    oauthClientHint,
+    resetOAuthBrowserFlow,
+    syncOAuthMethodFields
+} from './gemini-oauth.js?v=1';
 
 let isAppInitialized = false;
 
@@ -372,7 +381,7 @@ async function loadAccounts() {
                         <i class="fas fa-heartbeat"></i> ${t('accounts.check')}
                     </button>
                     ${isOAuth ? `
-                    <button class="btn btn-sm btn-outline acc-oauth-btn" data-account-id="${idEsc}" data-account-label="${labelEsc}" data-project-id="${escapeAttr(account.project_id || '')}">
+                    <button class="btn btn-sm btn-outline acc-oauth-btn" data-account-id="${idEsc}" data-account-label="${labelEsc}" data-project-id="${escapeAttr(account.project_id || '')}" data-oauth-type="${escapeAttr(account.oauth_type || 'code_assist')}">
                         <i class="fas fa-key"></i> 更新 OAuth
                     </button>` : `
                     <button class="btn btn-sm btn-outline acc-cookie-btn" data-account-id="${idEsc}" data-account-label="${labelEsc}">
@@ -397,7 +406,8 @@ async function loadAccounts() {
             btn.addEventListener('click', () => openUpdateOAuthModal(
                 btn.dataset.accountId,
                 btn.dataset.accountLabel || '',
-                btn.dataset.projectId || ''
+                btn.dataset.projectId || '',
+                btn.dataset.oauthType || 'code_assist'
             ));
         });
         container.querySelectorAll('.acc-remove-btn').forEach(btn => {
@@ -456,21 +466,27 @@ function syncAddAccountFields() {
     const cookieFields = document.getElementById('add-cookie-fields');
     const oauthFields = document.getElementById('add-oauth-fields');
     const projectField = document.getElementById('add-project-field');
+    const clientHint = document.getElementById('add-oauth-client-hint');
     if (cookieFields) cookieFields.hidden = authType !== 'cookie';
     if (oauthFields) oauthFields.hidden = authType !== 'oauth';
     if (projectField) projectField.hidden = oauthType !== 'code_assist';
+    if (clientHint) clientHint.textContent = oauthClientHint(oauthType);
+    syncOAuthMethodFields('add');
 }
 
 function closeAddAccountModal() {
     const modal = document.getElementById('addAccountModal');
     if (modal) {
         modal.classList.remove('active');
-        const inputs = modal.querySelectorAll('input');
+        const inputs = modal.querySelectorAll('input:not([type="radio"]), textarea');
         inputs.forEach(input => { input.value = ''; });
+        const browserMethod = modal.querySelector('input[name="add-oauth-method"][value="browser"]');
+        if (browserMethod) browserMethod.checked = true;
         const authType = document.getElementById('add-auth-type');
         const oauthType = document.getElementById('add-oauth-type');
         if (authType) authType.value = 'cookie';
         if (oauthType) oauthType.value = 'code_assist';
+        resetOAuthBrowserFlow('add');
         syncAddAccountFields();
     }
 }
@@ -478,17 +494,25 @@ function closeAddAccountModal() {
 async function submitAddAccount() {
     const authType = document.getElementById('add-auth-type')?.value || 'cookie';
     const oauthType = document.getElementById('add-oauth-type')?.value || 'code_assist';
+    const oauthMethod = getOAuthMethod('add');
+    const browserToken = oauthMethod === 'browser' ? getOAuthToken('add') : null;
     const psid = document.getElementById('add-psid')?.value.trim() || '';
     const psidts = document.getElementById('add-psidts')?.value.trim() || '';
     const label = document.getElementById('add-label')?.value.trim() || '';
-    const accessToken = document.getElementById('add-access-token')?.value.trim() || '';
-    const refreshToken = document.getElementById('add-refresh-token')?.value.trim() || '';
-    const projectId = document.getElementById('add-project-id')?.value.trim() || '';
+    const accessToken = browserToken?.access_token || document.getElementById('add-access-token')?.value.trim() || '';
+    const refreshToken = browserToken?.refresh_token || document.getElementById('add-refresh-token')?.value.trim() || '';
+    const projectId = oauthType === 'code_assist'
+        ? (document.getElementById('add-project-id')?.value.trim() || '')
+        : '';
     const oauthClientId = document.getElementById('add-oauth-client-id')?.value.trim() || '';
     const oauthClientSecret = document.getElementById('add-oauth-client-secret')?.value.trim() || '';
 
     if (authType === 'cookie' && !psid) {
         showToast('请填写 __Secure-1PSID', 'warning');
+        return;
+    }
+    if (authType === 'oauth' && oauthMethod === 'browser' && !isOAuthAuthorized('add')) {
+        showToast('请先完成浏览器 OAuth 授权', 'warning');
         return;
     }
     if (authType === 'oauth' && !accessToken && !refreshToken) {
@@ -505,6 +529,7 @@ async function submitAddAccount() {
             oauth_type: oauthType,
             access_token: accessToken,
             refresh_token: refreshToken,
+            expires_at: oauthMethod === 'browser' ? (browserToken?.expires_at || 0) : 0,
             project_id: projectId,
             oauth_client_id: oauthClientId,
             oauth_client_secret: oauthClientSecret
@@ -523,33 +548,62 @@ async function submitAddAccount() {
 // ============================================================================
 
 let updateOAuthAccountId = null;
+let updateOAuthType = 'code_assist';
 
-function openUpdateOAuthModal(accountId, label, projectId) {
+function openUpdateOAuthModal(accountId, label, projectId, oauthType = 'code_assist') {
     updateOAuthAccountId = accountId;
+    updateOAuthType = oauthType === 'ai_studio' ? 'ai_studio' : 'code_assist';
     const modal = document.getElementById('updateOAuthModal');
     const title = document.getElementById('updateOAuthTitle');
     const project = document.getElementById('update-project-id');
+    const typeLabel = document.getElementById('update-oauth-type-label');
+    const browserMethod = modal?.querySelector('input[name="update-oauth-method"][value="browser"]');
     if (title) title.textContent = `更新 OAuth - ${label || accountId}`;
     if (project) project.value = projectId || '';
+    if (typeLabel) typeLabel.textContent = updateOAuthType === 'ai_studio' ? 'Gemini API / AI Studio' : 'Gemini CLI / Code Assist';
+    if (browserMethod) browserMethod.checked = true;
+    resetOAuthBrowserFlow('update');
+    syncUpdateOAuthFields();
     if (modal) modal.classList.add('active');
+}
+
+function syncUpdateOAuthFields() {
+    const project = document.getElementById('update-project-id');
+    const clientHint = document.getElementById('update-oauth-client-hint');
+    const projectGroup = project?.closest('.form-group');
+    if (projectGroup) projectGroup.hidden = updateOAuthType !== 'code_assist';
+    if (clientHint) clientHint.textContent = oauthClientHint(updateOAuthType);
+    syncOAuthMethodFields('update');
 }
 
 function closeUpdateOAuthModal() {
     const modal = document.getElementById('updateOAuthModal');
     if (modal) {
         modal.classList.remove('active');
-        const inputs = modal.querySelectorAll('input');
+        const inputs = modal.querySelectorAll('input:not([type="radio"]), textarea');
         inputs.forEach(input => { input.value = ''; });
+        const browserMethod = modal.querySelector('input[name="update-oauth-method"][value="browser"]');
+        if (browserMethod) browserMethod.checked = true;
+        resetOAuthBrowserFlow('update');
     }
     updateOAuthAccountId = null;
+    updateOAuthType = 'code_assist';
 }
 
 async function submitUpdateOAuth() {
-    const accessToken = document.getElementById('update-access-token')?.value.trim() || '';
-    const refreshToken = document.getElementById('update-refresh-token')?.value.trim() || '';
-    const projectId = document.getElementById('update-project-id')?.value.trim() || '';
+    const oauthMethod = getOAuthMethod('update');
+    const browserToken = oauthMethod === 'browser' ? getOAuthToken('update') : null;
+    const accessToken = browserToken?.access_token || document.getElementById('update-access-token')?.value.trim() || '';
+    const refreshToken = browserToken?.refresh_token || document.getElementById('update-refresh-token')?.value.trim() || '';
+    const projectId = updateOAuthType === 'code_assist'
+        ? (document.getElementById('update-project-id')?.value.trim() || '')
+        : '';
     const oauthClientId = document.getElementById('update-oauth-client-id')?.value.trim() || '';
     const oauthClientSecret = document.getElementById('update-oauth-client-secret')?.value.trim() || '';
+    if (oauthMethod === 'browser' && !isOAuthAuthorized('update')) {
+        showToast('请先完成浏览器 OAuth 授权', 'warning');
+        return;
+    }
     if (!accessToken) {
         showToast('请填写 Access Token', 'warning');
         return;
@@ -558,10 +612,19 @@ async function submitUpdateOAuth() {
         showToast('未选择账号', 'error');
         return;
     }
-    const payload = { access_token: accessToken, project_id: projectId };
+    const payload = {
+        access_token: accessToken,
+        expires_at: oauthMethod === 'browser' ? (browserToken?.expires_at || 0) : 0
+    };
+    if (updateOAuthType === 'code_assist') payload.project_id = projectId;
     if (refreshToken) payload.refresh_token = refreshToken;
-    if (oauthClientId) payload.oauth_client_id = oauthClientId;
-    if (oauthClientSecret) payload.oauth_client_secret = oauthClientSecret;
+    if (oauthMethod === 'browser') {
+        payload.oauth_client_id = oauthClientId;
+        payload.oauth_client_secret = oauthClientSecret;
+    } else {
+        if (oauthClientId) payload.oauth_client_id = oauthClientId;
+        if (oauthClientSecret) payload.oauth_client_secret = oauthClientSecret;
+    }
     try {
         showToast('正在更新 OAuth...', 'info');
         await apiCall('PUT', `/admin/accounts/${updateOAuthAccountId}/oauth`, payload);
@@ -883,16 +946,16 @@ function _pgRenderContent(text) {
     // 1) markdown 图片 ![alt](url)
     s = s.replace(/!\[[^\]]*\]\((data:image\/[^)]+|https?:\/\/[^)\s]+)\)/g, (m, url) => {
         const i = imgs.push(url) - 1;
-        return ` IMG${i} `;
+        return `\0IMG${i}\0`;
     });
     // 2) 裸的 data:image 或 /images/ 图片 URL
     s = s.replace(/(data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+)/g, (m, url) => {
         const i = imgs.push(url) - 1;
-        return ` IMG${i} `;
+        return `\0IMG${i}\0`;
     });
     s = s.replace(/(https?:\/\/[^\s)]+\/images\/[^\s)]+\.(?:png|jpg|jpeg|webp|gif))/gi, (m, url) => {
         const i = imgs.push(url) - 1;
-        return ` IMG${i} `;
+        return `\0IMG${i}\0`;
     });
     // 转义剩余文本，再把占位符还原成 <img>
     let html = escapeHtml(s);
@@ -901,7 +964,7 @@ function _pgRenderContent(text) {
         // 会被 `"` 逸出注入 onerror 等事件属性。仅允许 http(s)/data:image 协议，
         // 并用 escapeAttr 转义属性值，杜绝属性逸出型 XSS。
         const safeUrl = /^(https?:|data:image\/)/i.test(url) ? escapeAttr(url) : '';
-        html = html.replace(` IMG${i} `,
+        html = html.replace(`\0IMG${i}\0`,
             `<img src="${safeUrl}" class="chat-img" alt="generated image">`);
     });
     return html;
@@ -1096,7 +1159,13 @@ function initEventListeners() {
     const authTypeSelect = document.getElementById('add-auth-type');
     const oauthTypeSelect = document.getElementById('add-oauth-type');
     if (authTypeSelect) authTypeSelect.addEventListener('change', syncAddAccountFields);
-    if (oauthTypeSelect) oauthTypeSelect.addEventListener('change', syncAddAccountFields);
+    if (oauthTypeSelect) {
+        oauthTypeSelect.addEventListener('change', () => {
+            resetOAuthBrowserFlow('add');
+            syncAddAccountFields();
+        });
+    }
+    initGeminiOAuthFlow('add', () => document.getElementById('add-oauth-type')?.value || 'code_assist');
 
     // Add account modal close buttons
     const addModal = document.getElementById('addAccountModal');
@@ -1137,6 +1206,7 @@ function initEventListeners() {
         if (confirmUpdateOAuth) {
             confirmUpdateOAuth.addEventListener('click', submitUpdateOAuth);
         }
+        initGeminiOAuthFlow('update', () => updateOAuthType);
     }
 
     // Playground send
@@ -1291,23 +1361,40 @@ window.app = {
     }
 };
 
-// Wait for components to load, then initialize
-window.addEventListener('componentsLoaded', async () => {
-    const authSuccess = await initAuth();
-    if (authSuccess) {
-        await initApp();
-    }
-});
+function revealApp() {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            document.documentElement.classList.remove('app-loading');
+            document.documentElement.classList.add('app-ready');
+            document.body.style.overflow = '';
+        });
+    });
+}
 
-// Fallback: if components are already in DOM (static HTML)
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(async () => {
-        if (!isAppInitialized) {
-            const sidebar = document.querySelector('.sidebar');
-            if (sidebar) {
-                const authSuccess = await initAuth();
-                if (authSuccess) await initApp();
-            }
-        }
-    }, 500);
-});
+function showStartupError(error) {
+    console.error('Failed to initialize application:', error);
+    const boot = document.getElementById('appBoot');
+    const status = document.getElementById('appBootStatus');
+    const retry = document.getElementById('appBootRetry');
+    if (boot) boot.classList.add('failed');
+    if (status) status.textContent = '页面加载失败，请重试';
+    if (retry) retry.addEventListener('click', () => window.location.reload(), { once: true });
+}
+
+async function bootstrap() {
+    try {
+        const componentsReady = initializeComponents();
+        // 认证失败会立即跳转登录页；提前挂 rejection handler，避免此时组件请求失败
+        // 产生未处理 Promise，同时在已认证路径仍由下面的 await 统一展示错误页。
+        componentsReady.catch(() => {});
+        const authSuccess = await initAuth();
+        if (!authSuccess) return;
+        await componentsReady;
+        await initApp();
+        revealApp();
+    } catch (error) {
+        showStartupError(error);
+    }
+}
+
+bootstrap();

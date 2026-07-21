@@ -12,6 +12,11 @@ from pydantic import BaseModel
 
 from app.config import APP_VERSION, mask_secret
 from app.core.account_pool import account_pool
+from app.core.gemini_oauth_flow import (
+    OAuthFlowError,
+    OAuthUpstreamError,
+    gemini_oauth_flow,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -46,6 +51,74 @@ class AddAccountRequest(BaseModel):
     project_id: str = ""
     oauth_client_id: str = ""
     oauth_client_secret: str = ""
+
+
+class GeminiOAuthAuthURLRequest(BaseModel):
+    oauth_type: str = "code_assist"
+    project_id: str = ""
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+
+
+class GeminiOAuthExchangeCodeRequest(BaseModel):
+    session_id: str
+    state: str
+    code: str
+    oauth_type: str = ""
+
+
+@router.get("/gemini/oauth/capabilities")
+async def gemini_oauth_capabilities():
+    return gemini_oauth_flow.capabilities()
+
+
+@router.post("/gemini/oauth/auth-url")
+async def generate_gemini_oauth_url(req: GeminiOAuthAuthURLRequest):
+    try:
+        return gemini_oauth_flow.create_authorization(
+            oauth_type=req.oauth_type,
+            project_id=req.project_id,
+            client_id=req.oauth_client_id,
+            client_secret=req.oauth_client_secret,
+        )
+    except OAuthFlowError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": str(e), "type": "oauth_validation_error"}},
+        )
+    except Exception:
+        logger.exception("Failed to create Gemini OAuth authorization session")
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"message": "Failed to create OAuth authorization", "type": "oauth_error"}},
+        )
+
+
+@router.post("/gemini/oauth/exchange-code")
+async def exchange_gemini_oauth_code(req: GeminiOAuthExchangeCodeRequest):
+    try:
+        return await gemini_oauth_flow.exchange_code(
+            session_id=req.session_id,
+            state=req.state,
+            code=req.code,
+            oauth_type=req.oauth_type,
+        )
+    except OAuthFlowError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"message": str(e), "type": "oauth_validation_error"}},
+        )
+    except OAuthUpstreamError as e:
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"error": {"message": str(e), "type": "oauth_upstream_error"}},
+        )
+    except Exception:
+        logger.exception("Failed to exchange Gemini OAuth authorization code")
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"message": "Failed to exchange OAuth authorization code", "type": "oauth_error"}},
+        )
 
 
 @router.post("/reload-cookies")

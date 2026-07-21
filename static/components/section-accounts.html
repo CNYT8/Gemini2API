@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="components/section-accounts.css?v=3">
+<link rel="stylesheet" href="components/section-accounts.css?v=4">
 <!-- Accounts Section -->
 <section id="accounts" class="section" aria-labelledby="accounts-title">
     <div class="section-header">
@@ -53,14 +53,6 @@
                         <option value="ai_studio">Gemini API / AI Studio</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label for="add-access-token">Access Token</label>
-                    <input type="password" id="add-access-token" class="form-control" autocomplete="off" placeholder="ya29...">
-                </div>
-                <div class="form-group">
-                    <label for="add-refresh-token">Refresh Token</label>
-                    <input type="password" id="add-refresh-token" class="form-control" autocomplete="off">
-                </div>
                 <div class="form-group" id="add-project-field">
                     <label for="add-project-id">Project ID</label>
                     <input type="text" id="add-project-id" class="form-control" autocomplete="off">
@@ -72,6 +64,57 @@
                 <div class="form-group">
                     <label for="add-oauth-client-secret">OAuth Client Secret</label>
                     <input type="password" id="add-oauth-client-secret" class="form-control" autocomplete="off">
+                </div>
+                <p class="oauth-field-hint" id="add-oauth-client-hint">Code Assist 留空时使用内置 Gemini CLI OAuth 客户端</p>
+                <div class="form-group">
+                    <span class="form-field-label">授权方式</span>
+                    <div class="oauth-method-switch" role="radiogroup" aria-label="授权方式">
+                        <label>
+                            <input type="radio" name="add-oauth-method" value="browser" checked>
+                            <span><i class="fas fa-external-link-alt"></i> 浏览器授权</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="add-oauth-method" value="manual">
+                            <span><i class="fas fa-key"></i> 手工 Token</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="add-oauth-browser-fields" class="oauth-browser-fields">
+                    <button type="button" class="btn btn-primary oauth-generate-btn" id="add-oauth-generate">
+                        <i class="fas fa-link"></i> 生成授权网址
+                    </button>
+                    <div id="add-oauth-browser-result" class="oauth-browser-result" hidden>
+                        <div class="form-group">
+                            <label for="add-oauth-auth-url">授权网址</label>
+                            <div class="oauth-url-row">
+                                <input type="text" id="add-oauth-auth-url" class="form-control" readonly>
+                                <button type="button" class="btn btn-outline oauth-icon-btn" id="add-oauth-copy" title="复制授权网址" aria-label="复制授权网址">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <a class="btn btn-outline oauth-open-btn" id="add-oauth-open" target="_blank" rel="noopener noreferrer">
+                                    <i class="fas fa-external-link-alt"></i> 打开
+                                </a>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="add-oauth-code">授权码或回调地址</label>
+                            <textarea id="add-oauth-code" class="form-control oauth-code-input" rows="3" autocomplete="off"></textarea>
+                        </div>
+                        <button type="button" class="btn btn-secondary" id="add-oauth-exchange">
+                            <i class="fas fa-check"></i> 兑换授权码
+                        </button>
+                    </div>
+                    <p id="add-oauth-status" class="oauth-flow-status" role="status" hidden></p>
+                </div>
+                <div id="add-oauth-manual-fields" hidden>
+                    <div class="form-group">
+                        <label for="add-access-token">Access Token</label>
+                        <input type="password" id="add-access-token" class="form-control" autocomplete="off" placeholder="ya29...">
+                    </div>
+                    <div class="form-group">
+                        <label for="add-refresh-token">Refresh Token</label>
+                        <input type="password" id="add-refresh-token" class="form-control" autocomplete="off">
+                    </div>
                 </div>
             </div>
         </div>
@@ -93,12 +136,21 @@
         </div>
         <div class="modal-body">
             <div class="form-group">
-                <label for="update-access-token">Access Token <span class="required">*</span></label>
-                <input type="password" id="update-access-token" class="form-control" autocomplete="off">
+                <span class="form-field-label">OAuth 模式</span>
+                <span id="update-oauth-type-label" class="oauth-account-type">Gemini CLI / Code Assist</span>
             </div>
             <div class="form-group">
-                <label for="update-refresh-token">Refresh Token</label>
-                <input type="password" id="update-refresh-token" class="form-control" autocomplete="off">
+                <span class="form-field-label">授权方式</span>
+                <div class="oauth-method-switch" role="radiogroup" aria-label="授权方式">
+                    <label>
+                        <input type="radio" name="update-oauth-method" value="browser" checked>
+                        <span><i class="fas fa-external-link-alt"></i> 浏览器授权</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="update-oauth-method" value="manual">
+                        <span><i class="fas fa-key"></i> 手工 Token</span>
+                    </label>
+                </div>
             </div>
             <div class="form-group">
                 <label for="update-project-id">Project ID</label>
@@ -111,6 +163,44 @@
             <div class="form-group">
                 <label for="update-oauth-client-secret">OAuth Client Secret</label>
                 <input type="password" id="update-oauth-client-secret" class="form-control" autocomplete="off">
+            </div>
+            <p class="oauth-field-hint" id="update-oauth-client-hint">Code Assist 留空时使用内置 Gemini CLI OAuth 客户端</p>
+            <div id="update-oauth-browser-fields" class="oauth-browser-fields">
+                <button type="button" class="btn btn-primary oauth-generate-btn" id="update-oauth-generate">
+                    <i class="fas fa-link"></i> 生成授权网址
+                </button>
+                <div id="update-oauth-browser-result" class="oauth-browser-result" hidden>
+                    <div class="form-group">
+                        <label for="update-oauth-auth-url">授权网址</label>
+                        <div class="oauth-url-row">
+                            <input type="text" id="update-oauth-auth-url" class="form-control" readonly>
+                            <button type="button" class="btn btn-outline oauth-icon-btn" id="update-oauth-copy" title="复制授权网址" aria-label="复制授权网址">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                            <a class="btn btn-outline oauth-open-btn" id="update-oauth-open" target="_blank" rel="noopener noreferrer">
+                                <i class="fas fa-external-link-alt"></i> 打开
+                            </a>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="update-oauth-code">授权码或回调地址</label>
+                        <textarea id="update-oauth-code" class="form-control oauth-code-input" rows="3" autocomplete="off"></textarea>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="update-oauth-exchange">
+                        <i class="fas fa-check"></i> 兑换授权码
+                    </button>
+                </div>
+                <p id="update-oauth-status" class="oauth-flow-status" role="status" hidden></p>
+            </div>
+            <div id="update-oauth-manual-fields" hidden>
+                <div class="form-group">
+                    <label for="update-access-token">Access Token <span class="required">*</span></label>
+                    <input type="password" id="update-access-token" class="form-control" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="update-refresh-token">Refresh Token</label>
+                    <input type="password" id="update-refresh-token" class="form-control" autocomplete="off">
+                </div>
             </div>
         </div>
         <div class="modal-footer">

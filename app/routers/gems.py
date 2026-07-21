@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.core.account_pool import account_pool
+from app.core.gemini_models import DEFAULT_GEM_MODEL
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Gems"])
@@ -25,7 +26,7 @@ class UpdateGemRequest(BaseModel):
 class GemMappingRequest(BaseModel):
     model_name: str
     gem_id: str
-    base_model: str = "gemini-pro"
+    base_model: str = DEFAULT_GEM_MODEL
     account_id: str
 
 

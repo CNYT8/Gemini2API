@@ -14,6 +14,11 @@ from app.core.api_forwarder import forward_to_provider, open_stream
 from app.core.fallback import fallback_enabled, is_empty_result, get_fallback_entries, openai_data_is_empty
 from app.core.conversation_store import conversation_store
 from app.core.gemini_client import GEMINI_MODELS, MODEL_ALIASES, _resolve_model
+from app.core.gemini_models import (
+    DEFAULT_GEM_MODEL,
+    DEFAULT_IMAGE_MODEL,
+    normalize_catalog_model,
+)
 from app.core.stream import split_into_chunks, format_sse, stream_with_keepalive
 from app.models.openai import (
     ChatRequest, ChatResponse, Choice, ChoiceMessage,
@@ -35,7 +40,7 @@ def _apply_model_whitelist(models: list[str]) -> list[str]:
     raw = (settings.model_whitelist or "").strip()
     if not raw:
         return models
-    allowed = {m.strip() for m in raw.split(",") if m.strip()}
+    allowed = {normalize_catalog_model(m) for m in raw.split(",") if m.strip()}
     if not allowed:
         return models
     return [m for m in models if m in allowed]
@@ -278,7 +283,7 @@ async def chat_completions(req: ChatRequest, request: Request):
         if gem_info:
             gem_id = gem_info.get("gem_id")
             gem_account_id = gem_info.get("account_id") or None
-            resolved_model = gem_info.get("base_model") or "gemini-pro"
+            resolved_model = gem_info.get("base_model") or DEFAULT_GEM_MODEL
 
     if resolved_model not in gemini_client.models and _resolve_model(resolved_model) not in GEMINI_MODELS:
         tp = await _dispatch_thirdparty(request, req, resolved_model)
@@ -736,9 +741,9 @@ async def images_generations(req: ImageGenerationRequest):
     else:
         prompt = raw_prompt
 
-    model = _resolve_model(req.model or "gemini-pro")
+    model = req.model or DEFAULT_IMAGE_MODEL
     try:
-        result = await gemini_client.generate(prompt, req.model or "gemini-pro")
+        result = await gemini_client.generate(prompt, model)
     except (RuntimeError, ValueError) as e:
         return JSONResponse(status_code=500,
             content={"error": {"message": str(e), "type": "api_error"}})

@@ -7,6 +7,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.core.account_pool import account_pool as gemini_client
+from app.core.gemini_models import (
+    DEFAULT_GEM_MODEL,
+    MODEL_DISPLAY_NAMES,
+    NATIVE_MODELS,
+    normalize_catalog_model,
+    normalize_model_name,
+)
 from app.core.stream import (
     split_into_chunks,
     prefetch_first_effective_stream_event,
@@ -42,7 +49,7 @@ def _whitelist_set() -> set[str] | None:
         m = m.strip()
         if not m:
             continue
-        allowed.add(m[7:] if m.startswith("models/") else m)
+        allowed.add(normalize_catalog_model(m))
     return allowed or None
 
 
@@ -91,20 +98,10 @@ async def list_models():
     """List available Gemini models."""
     models = [
         GeminiModelInfo(
-            name="models/gemini-2.0-flash-exp",
-            display_name="Gemini 2.0 Flash Experimental",
-            description="Fast and efficient model for general tasks",
-        ),
-        GeminiModelInfo(
-            name="models/gemini-1.5-pro",
-            display_name="Gemini 1.5 Pro",
-            description="Advanced model for complex reasoning",
-        ),
-        GeminiModelInfo(
-            name="models/gemini-1.5-flash",
-            display_name="Gemini 1.5 Flash",
-            description="Fast model for quick responses",
-        ),
+            name=f"models/{model}",
+            display_name=MODEL_DISPLAY_NAMES[model],
+        )
+        for model in NATIVE_MODELS
     ]
     # MODEL_WHITELIST 过滤（为空则放行全部）；按裸模型名匹配 name 去掉 `models/` 前缀
     allowed = _whitelist_set()
@@ -113,15 +110,37 @@ async def list_models():
             m for m in models
             if (m.name[7:] if m.name.startswith("models/") else m.name) in allowed
         ]
-    return JSONResponse(content=GeminiModelList(models=models).model_dump())
+    return JSONResponse(content=GeminiModelList(models=models).model_dump(by_alias=True))
+
+
+@router.get("/models/{model:path}")
+async def get_model(model: str):
+    """Return native Gemini metadata for one model."""
+    model = normalize_model_name(model)
+    allowed = _whitelist_set()
+    if model not in NATIVE_MODELS or (allowed is not None and model not in allowed):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "code": 404,
+                    "message": f"Model {model} not found",
+                    "status": "NOT_FOUND",
+                }
+            },
+        )
+    info = GeminiModelInfo(
+        name=f"models/{model}",
+        display_name=MODEL_DISPLAY_NAMES[model],
+    )
+    return JSONResponse(content=info.model_dump(by_alias=True))
 
 
 @router.post("/models/{model}:generateContent")
 @limiter.limit(dynamic_rate_limit, exempt_when=rate_limit_exempt)
 async def generate_content(model: str, req: GeminiRequest, request: Request):
     """Generate content using Gemini API (non-streaming)."""
-    if model.startswith("models/"):
-        model = model[7:]
+    model = normalize_model_name(model)
 
     # gem 模型解析：命中则取出 gem_id/account_id，并把对话模型换成 base_model
     gem_mapping = getattr(request.app.state, "gem_mapping", None)
@@ -132,7 +151,7 @@ async def generate_content(model: str, req: GeminiRequest, request: Request):
         if gem_info:
             gem_id = gem_info.get("gem_id")
             gem_account_id = gem_info.get("account_id") or None
-            model = gem_info.get("base_model") or "gemini-pro"
+            model = gem_info.get("base_model") or DEFAULT_GEM_MODEL
 
     messages, attachments = _parse_contents(req.contents)
     system = _parse_system(req.system_instruction)
@@ -217,8 +236,7 @@ async def generate_content(model: str, req: GeminiRequest, request: Request):
 @limiter.limit(dynamic_rate_limit, exempt_when=rate_limit_exempt)
 async def stream_generate_content(model: str, req: GeminiRequest, request: Request):
     """Generate content using Gemini API (streaming with chunked JSON)."""
-    if model.startswith("models/"):
-        model = model[7:]
+    model = normalize_model_name(model)
 
     # gem 模型解析：命中则取出 gem_id/account_id，并把对话模型换成 base_model
     gem_mapping = getattr(request.app.state, "gem_mapping", None)
@@ -229,7 +247,7 @@ async def stream_generate_content(model: str, req: GeminiRequest, request: Reque
         if gem_info:
             gem_id = gem_info.get("gem_id")
             gem_account_id = gem_info.get("account_id") or None
-            model = gem_info.get("base_model") or "gemini-pro"
+            model = gem_info.get("base_model") or DEFAULT_GEM_MODEL
 
     messages, attachments = _parse_contents(req.contents)
     system = _parse_system(req.system_instruction)

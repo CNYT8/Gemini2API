@@ -373,20 +373,23 @@ curl -X POST http://localhost:5918/v1/images/generations \
 
 ## 支持的模型
 
-### 对外固定稳定模型名
-
-Gemini2API 对外提供 3 个固定的稳定模型名，永不变更。这些模型名作为 API 契约，客户端可以长期使用而无需担心模型名变化：
+内置 Gemini 模型目录与 Sub2API 的 Gemini API/CLI 平台保持一致：
 
 | 模型名称 | 说明 |
 |---------|------|
-| `gemini-pro` | Pro 模型，性能最强，适合复杂任务 |
-| `gemini-flash` | 快速模型，低延迟，适合实时应用 |
-| `gemini-flash-thinking` | 思考模型，支持深度推理和分析 |
+| `gemini-2.0-flash` | 默认通用及账号测试模型 |
+| `gemini-2.5-flash` | 快速通用模型 |
+| `gemini-2.5-flash-image` | Gemini 2.5 生图模型 |
+| `gemini-2.5-pro` | 高质量 Pro 模型 |
+| `gemini-3.5-flash` | Gemini 3.5 Flash 模型 |
+| `gemini-3-flash-preview` | Gemini 3 Flash 预览模型 |
+| `gemini-3-pro-preview` | Gemini 3 Pro 预览模型 |
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro 预览模型 |
+| `gemini-3.1-flash-image` | Gemini 3.1 生图模型 |
 
-**内部自动映射**：服务内部会根据你的 Google 账号订阅等级（Advanced/Plus/Basic）自动映射到当前真实可用的模型版本。无论账号等级如何变化、Google 灰度发布如何调整、服务重启等，客户端始终使用这 3 个固定名称，无需修改。
+Gemini 原生模型接口还识别 `gemini-3.1-pro-preview-customtools`，与 Sub2API 的 Code Assist 兼容路由一致。
 
-**旧别名兼容**：为了向后兼容，以下旧模型名仍然支持：
-- `gemini-2.5-pro`、`gemini-2.0-flash`、`gemini-2.0-flash-thinking` 等
+**账号感知路由**：OAuth API/CLI 账号原样接收具体模型 ID；Cookie 账号会映射到该账号当前可用的 Pro/Flash 网页模型家族。旧 `gemini-pro`、`gemini-flash`、`gemini-flash-thinking` 名称继续兼容。
 
 ### 第三方模型
 

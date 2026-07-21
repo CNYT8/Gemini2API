@@ -1,21 +1,140 @@
 <!DOCTYPE html>
-<html lang="zh-CN" id="html-root">
+<html lang="zh-CN" id="html-root" class="app-loading">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <meta name="theme-color" content="#059669">
     <meta name="description" content="Gemini2API Management Console">
     <title>Gemini2API - 管理控制台</title>
+    <script>
+        try {
+            const savedTheme = localStorage.getItem('gemini2api_theme');
+            const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        } catch (_) {}
+    </script>
+    <style>
+        html.app-loading body {
+            overflow: hidden;
+        }
+
+        html.app-loading .container,
+        html.app-loading #toastContainer {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .container,
+        #toastContainer {
+            transition: opacity 0.15s ease;
+        }
+
+        #appBoot {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8fafc;
+            color: #0f172a;
+            transition: opacity 0.15s ease, visibility 0.15s ease;
+        }
+
+        [data-theme="dark"] #appBoot {
+            background: #0f172a;
+            color: #f1f5f9;
+        }
+
+        .app-boot-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            min-width: 180px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .app-boot-spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid #cbd5e1;
+            border-top-color: #059669;
+            border-radius: 50%;
+            animation: appBootSpin 0.75s linear infinite;
+        }
+
+        .app-boot-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .app-boot-status {
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .app-boot-retry {
+            display: none;
+            padding: 8px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #ffffff;
+            color: #0f172a;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        #appBoot.failed .app-boot-spinner {
+            display: none;
+        }
+
+        #appBoot.failed .app-boot-retry {
+            display: block;
+        }
+
+        html.app-ready #appBoot {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        @keyframes appBootSpin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .app-boot-spinner {
+                animation-duration: 1.5s;
+            }
+        }
+    </style>
     <link rel="stylesheet" href="app/base.css?v=5">
     <link rel="stylesheet" href="app/mobile.css?v=3">
+    <link rel="stylesheet" href="components/header.css?v=3">
+    <link rel="stylesheet" href="components/sidebar.css?v=3">
+    <link rel="stylesheet" href="components/section-dashboard.css?v=3">
+    <link rel="stylesheet" href="components/section-accounts.css?v=4">
+    <link rel="stylesheet" href="components/section-playground.css?v=5">
+    <link rel="stylesheet" href="components/section-usage-stats.css?v=3">
+    <link rel="stylesheet" href="components/section-logs.css?v=3">
+    <link rel="stylesheet" href="components/section-api-keys.css?v=3">
+    <link rel="stylesheet" href="components/section-gems.css?v=1">
+    <link rel="stylesheet" href="components/section-settings.css?v=4">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script type="module">
-        import { getCurrentTheme } from './app/theme-switcher.js';
-        const theme = getCurrentTheme();
-        if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-    </script>
 </head>
 <body>
+    <div id="appBoot" role="status" aria-live="polite" aria-label="页面加载状态">
+        <div class="app-boot-content">
+            <span class="app-boot-spinner" aria-hidden="true"></span>
+            <strong class="app-boot-title">Gemini2API</strong>
+            <span class="app-boot-status" id="appBootStatus">加载中...</span>
+            <button class="app-boot-retry" id="appBootRetry" type="button">重新加载</button>
+        </div>
+    </div>
+
     <div class="container">
         <!-- Header will be inserted here by component-loader -->
 
@@ -34,18 +153,6 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <!-- Scripts -->
-    <script type="module">
-        import { initializeComponents } from './app/component-loader.js';
-
-        (async function() {
-            try {
-                await initializeComponents();
-            } catch (error) {
-                console.error('Failed to load components:', error);
-                document.body.innerHTML = '<div style="padding:2rem;text-align:center;"><h2>加载失败</h2><p>请刷新页面重试</p></div>';
-            }
-        })();
-    </script>
-    <script type="module" src="app/app.js?v=15"></script>
+    <script type="module" src="app/app.js?v=17"></script>
 </body>
 </html>

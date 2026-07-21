@@ -140,7 +140,7 @@ async function exposeGem(gemId, modelName) {
     try {
         await apiCall('POST', '/admin/gem-mapping', {
             model_name: modelName, gem_id: gemId,
-            base_model: 'gemini-pro', account_id: currentAccount,
+            base_model: 'gemini-2.5-pro', account_id: currentAccount,
         });
         showToast(t('gems.exposed'), 'success');
         await loadGems();

@@ -11,8 +11,9 @@ from typing import Callable
 import httpx
 
 from app.config import settings
-from app.core.gemini_client import HTTPStatusError, PUBLIC_MODELS
+from app.core.gemini_client import HTTPStatusError
 from app.core.file_upload import _resolve_bytes
+from app.core.gemini_models import PUBLIC_MODELS, normalize_model_name
 from app.core.stream import merge_gemini_stream_text
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ _OAUTH_MODEL_ALIASES = {
 
 
 def _oauth_model_name(model: str) -> str:
-    name = (model or "").removeprefix("models/")
+    name = normalize_model_name(model)
     return _OAUTH_MODEL_ALIASES.get(name, name)
 
 

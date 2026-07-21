@@ -16,6 +16,7 @@ from app.core.fingerprint.config import fingerprint_config
 from app.core.fingerprint.header_builder import header_builder
 from app.core.fingerprint.cookie_jar import PersistentCookieJar
 from app.core.fingerprint.jitter import apply_jitter, random_delay_factor
+from app.core.gemini_models import PUBLIC_MODELS, normalize_model_name
 from app.core.usage_metrics import live_metrics
 from app.utils.tools import maybe_image_generation_intent
 
@@ -58,10 +59,20 @@ GEMINI_MODELS = {
     "gemini-3-flash-thinking-advanced": {"id": "e051ce1aa80aa576", "capacity": 2, "pro_only": True, "family": "flash-thinking"},
 }
 
-# 对外暴露的稳定模型名（永不变，API 契约）。客户端只认这 3 个，
-# 内部按账号当前真实可用的模型动态映射，账号订阅等级/Google 灰度怎么变都不影响 API。
-PUBLIC_MODELS = ["gemini-pro", "gemini-flash", "gemini-flash-thinking"]
+# 对外模型名与 Sub2API Gemini 平台保持一致。Cookie 账号没有原生 API 模型名，
+# 因此按 family 映射到该账号网页端当前真实可用的模型；OAuth 账号则原样透传具体模型名。
 _PUBLIC_FAMILY = {
+    "gemini-2.0-flash": "flash",
+    "gemini-2.5-flash": "flash",
+    "gemini-2.5-flash-image": "flash",
+    "gemini-2.5-pro": "pro",
+    "gemini-3.5-flash": "flash",
+    "gemini-3-flash-preview": "flash",
+    "gemini-3-pro-preview": "pro",
+    "gemini-3.1-pro-preview": "pro",
+    "gemini-3.1-pro-preview-customtools": "pro",
+    "gemini-3.1-flash-image": "flash",
+    # 旧版稳定名继续接受，但不再作为主模型列表展示。
     "gemini-pro": "pro",
     "gemini-flash": "flash",
     "gemini-flash-thinking": "flash-thinking",
@@ -74,18 +85,15 @@ _FAMILY_DEFAULT = {
 }
 
 MODEL_ALIASES = {
-    # 旧版别名 → 公开名（再由公开名按账号动态解析），保留兼容
-    "gemini-2.5-pro": "gemini-pro",
-    "gemini-2.5-flash": "gemini-flash",
+    # 历史 preview/1.x 名称继续兼容，并归一到 Sub2API 模型目录。
     "gemini-2.5-flash-thinking": "gemini-flash-thinking",
-    "gemini-2.5-pro-preview-05-06": "gemini-pro",
-    "gemini-2.5-flash-preview-04-17": "gemini-flash",
-    "gemini-2.5-flash-preview-05-20": "gemini-flash",
-    "gemini-2.0-flash": "gemini-flash",
+    "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
+    "gemini-2.5-flash-preview-04-17": "gemini-2.5-flash",
+    "gemini-2.5-flash-preview-05-20": "gemini-2.5-flash",
     "gemini-2.0-flash-thinking": "gemini-flash-thinking",
-    "gemini-2.0-flash-lite": "gemini-flash",
-    "gemini-1.5-pro": "gemini-pro",
-    "gemini-1.5-flash": "gemini-flash",
+    "gemini-2.0-flash-lite": "gemini-2.0-flash",
+    "gemini-1.5-pro": "gemini-2.5-pro",
+    "gemini-1.5-flash": "gemini-2.0-flash",
 }
 
 KNOWN_MODELS = list(GEMINI_MODELS.keys())
@@ -100,14 +108,15 @@ def _build_id_alias_map() -> dict[str, str]:
 def _resolve_model(model_name: str, family_model: dict[str, str] | None = None) -> str:
     """把用户请求的模型名解析为账号当前真实可用的内部模型名。
     1. 旧别名 → 公开名
-    2. 公开名（gemini-pro/flash/flash-thinking）→ 账号当前该 family 真实可用的内部模型
+    2. Sub2API 模型名或旧稳定名 → 账号当前该 family 真实可用的内部模型
        （family_model 为账号实例映射，缺省/未命中则用 family 默认）
     3. 已经是内部模型名（gemini-3-*）→ 原样
 
     family_model: 账号实例的 family→真实模型映射（P0-5：避免模块级全局被多账号污染）。
                   路由层仅做模型名校验时不传，退回 _FAMILY_DEFAULT。
     """
-    name = MODEL_ALIASES.get(model_name, model_name)
+    normalized = normalize_model_name(model_name)
+    name = MODEL_ALIASES.get(normalized, normalized)
     if name in _PUBLIC_FAMILY:
         family = _PUBLIC_FAMILY[name]
         fm = family_model or {}
@@ -565,7 +574,7 @@ class GeminiWebClient:
 
             # 不再用正则从 HTML 抓模型（会抓到过时/不可用的脏数据）。
             # 真实可用模型由 _send_heartbeat 调 otAQ7b 状态接口解析。
-            # 对外始终是固定公开名（API 稳定契约），状态接口只决定内部映射到哪个真实模型。
+            # 对外使用共享模型目录，状态接口只决定 Cookie 账号内部映射到哪个真实网页模型。
             if not self._available_models:
                 self._available_models = list(PUBLIC_MODELS)
         except Exception as e:
@@ -937,7 +946,7 @@ class GeminiWebClient:
                             if info["capacity"] in caps:
                                 family_model.setdefault(info["family"], name)
                         self._family_model.update(family_model)
-                        # 对外永远是固定公开名
+                        # 对外仍使用共享模型目录，仅更新该 Cookie 账号的内部 family 映射。
                         self._available_models = list(PUBLIC_MODELS)
                         logger.info(f"Account models resolved: {family_model} -> public {PUBLIC_MODELS}")
                         return

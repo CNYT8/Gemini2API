@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict
 
+from app.core.gemini_models import DEFAULT_GEM_MODEL
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +45,7 @@ class GemMapping:
     def set(self, name: str, info: dict) -> None:
         self.mappings[name] = {
             "gem_id": info.get("gem_id", ""),
-            "base_model": info.get("base_model", "gemini-pro"),
+            "base_model": info.get("base_model", DEFAULT_GEM_MODEL),
             "account_id": info.get("account_id", ""),
         }
         self._save()

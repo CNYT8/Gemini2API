@@ -33,6 +33,9 @@ def test_openapi_mounts_all_protocols(app_main):
         "/v1/chat/completions",   # OpenAI
         "/v1/messages",           # Claude
         "/gemini/v1beta/deepresearch",  # Deep Research
+        "/admin/gemini/oauth/capabilities",
+        "/admin/gemini/oauth/auth-url",
+        "/admin/gemini/oauth/exchange-code",
     ):
         assert expected in paths, f"missing route in OpenAPI schema: {expected}"
 

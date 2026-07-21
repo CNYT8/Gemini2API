@@ -61,22 +61,39 @@
     box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
 }
 
-.setting-field .toggle-switch input[type="checkbox"] {
+#settings .setting-field .toggle-switch {
+    display: inline-flex;
+    align-self: flex-start;
     width: 40px;
     height: 22px;
+    margin: 0;
+    line-height: 0;
+    cursor: pointer;
+}
+
+#settings .setting-field .toggle-switch input[type="checkbox"] {
+    display: block;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 22px;
+    margin: 0;
+    padding: 0;
+    border: 0;
     appearance: none;
+    -webkit-appearance: none;
     background: var(--border-color);
     border-radius: 11px;
     position: relative;
     cursor: pointer;
+    box-sizing: border-box;
     transition: background 0.2s;
 }
 
-.setting-field .toggle-switch input[type="checkbox"]:checked {
+#settings .setting-field .toggle-switch input[type="checkbox"]:checked {
     background: var(--primary-color);
 }
 
-.setting-field .toggle-switch input[type="checkbox"]::after {
+#settings .setting-field .toggle-switch input[type="checkbox"]::after {
     content: '';
     position: absolute;
     top: 2px;
@@ -88,7 +105,7 @@
     transition: transform 0.2s;
 }
 
-.setting-field .toggle-switch input[type="checkbox"]:checked::after {
+#settings .setting-field .toggle-switch input[type="checkbox"]:checked::after {
     transform: translateX(18px);
 }
 
@@ -127,7 +144,13 @@
     background: rgba(5, 150, 105, 0.05);
 }
 
-.radio-option input[type="radio"] {
+#settings .radio-option input[type="radio"] {
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
     accent-color: var(--primary-color);
 }
 

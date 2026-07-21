@@ -915,9 +915,9 @@ class AccountPool:
 
     @property
     def models(self) -> list[str]:
-        # 对外永远是固定的公开模型名（API 稳定契约），
-        # 内部由 _resolve_model 按账号真实可用模型动态映射。
-        from app.core.gemini_client import PUBLIC_MODELS
+        # 对外与 Sub2API Gemini 平台使用同一目录；Cookie 账号在客户端内
+        # 按 family 映射，OAuth 账号将具体模型名原样发给 API/CLI 上游。
+        from app.core.gemini_models import PUBLIC_MODELS
         return list(PUBLIC_MODELS)
 
     @property

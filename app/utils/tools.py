@@ -226,7 +226,7 @@ def parse_tool_response(text: str) -> dict:
     if looks_like_tool:
         logger.warning(f"工具调用 JSON 解析失败，畸形片段不透传: {text[:120]!r}")
         return {"type": "text",
-                "content": "（模型返回的工具调用格式有误，已忽略。请重试或换用 gemini-flash。）"}
+                "content": "（模型返回的工具调用格式有误，已忽略。请重试或换用 gemini-2.0-flash。）"}
 
     # 普通文本（非工具意图）原样返回
     return {"type": "text", "content": text}

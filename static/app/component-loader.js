@@ -5,6 +5,73 @@
 
 // 组件缓存
 const componentCache = new Map();
+const stylesheetCache = new Map();
+let initializationPromise = null;
+
+function loadStylesheet(href) {
+    const absoluteHref = new URL(href, document.baseURI).href;
+    if (stylesheetCache.has(absoluteHref)) {
+        return stylesheetCache.get(absoluteHref);
+    }
+
+    const promise = new Promise((resolve, reject) => {
+        const existing = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+            .find(link => link.href === absoluteHref);
+        if (existing?.sheet) {
+            resolve();
+            return;
+        }
+
+        const link = existing || document.createElement('link');
+        const onLoad = () => {
+            link.removeEventListener('load', onLoad);
+            link.removeEventListener('error', onError);
+            resolve();
+        };
+        const onError = () => {
+            link.removeEventListener('load', onLoad);
+            link.removeEventListener('error', onError);
+            reject(new Error(`Failed to load stylesheet: ${href}`));
+        };
+        link.addEventListener('load', onLoad, { once: true });
+        link.addEventListener('error', onError, { once: true });
+        if (!existing) {
+            link.rel = 'stylesheet';
+            link.href = href;
+            document.head.appendChild(link);
+        }
+    });
+    stylesheetCache.set(absoluteHref, promise);
+    return promise;
+}
+
+function prepareComponent(html) {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const styles = Array.from(template.content.querySelectorAll('link[rel="stylesheet"][href]'))
+        .map(link => {
+            const promise = loadStylesheet(link.getAttribute('href'));
+            link.remove();
+            return promise;
+        });
+    return { html: template.innerHTML, styles };
+}
+
+function insertPreparedComponent(html, container, position = 'beforeend') {
+    const containerElement = typeof container === 'string'
+        ? document.querySelector(container)
+        : container;
+
+    if (!containerElement) {
+        throw new Error(`Container not found: ${container}`);
+    }
+
+    if (position === 'replace') {
+        containerElement.innerHTML = html;
+    } else {
+        containerElement.insertAdjacentHTML(position, html);
+    }
+}
 
 /**
  * 加载单个组件
@@ -40,21 +107,9 @@ async function loadComponent(componentPath) {
  * @returns {Promise<void>}
  */
 async function insertComponent(componentPath, container, position = 'beforeend') {
-    const html = await loadComponent(componentPath);
-
-    const containerElement = typeof container === 'string'
-        ? document.querySelector(container)
-        : container;
-
-    if (!containerElement) {
-        throw new Error(`Container not found: ${container}`);
-    }
-
-    if (position === 'replace') {
-        containerElement.innerHTML = html;
-    } else {
-        containerElement.insertAdjacentHTML(position, html);
-    }
+    const component = prepareComponent(await loadComponent(componentPath));
+    await Promise.all(component.styles);
+    insertPreparedComponent(component.html, container, position);
 }
 
 /**
@@ -63,10 +118,14 @@ async function insertComponent(componentPath, container, position = 'beforeend')
  * @returns {Promise<void>}
  */
 async function loadComponents(components) {
-    const promises = components.map(({ path, container, position }) =>
-        insertComponent(path, container, position)
-    );
-    await Promise.all(promises);
+    const prepared = await Promise.all(components.map(async component => ({
+        ...component,
+        ...prepareComponent(await loadComponent(component.path)),
+    })));
+    await Promise.all(prepared.flatMap(component => component.styles));
+    prepared.forEach(component => {
+        insertPreparedComponent(component.html, component.container, component.position);
+    });
 }
 
 /**
@@ -75,37 +134,26 @@ async function loadComponents(components) {
  * @returns {Promise<void>}
  */
 async function initializeComponents() {
-    const basePath = 'components/';
-
-    try {
-        // 首先加载 header
-        await insertComponent(`${basePath}header.html`, '.container', 'afterbegin');
-
-        // 然后加载 sidebar
-        await insertComponent(`${basePath}sidebar.html`, '#sidebar-container', 'replace');
-
-        // 最后加载所有 section 组件
-        const sectionComponents = [
+    if (initializationPromise) return initializationPromise;
+    initializationPromise = (async () => {
+        const basePath = 'components/';
+        const components = [
+            { path: `${basePath}header.html`, container: '.container', position: 'afterbegin' },
+            { path: `${basePath}sidebar.html`, container: '#sidebar-container', position: 'replace' },
             { path: `${basePath}section-dashboard.html`, container: '#content-container', position: 'beforeend' },
-            { path: `${basePath}section-accounts.html?v=4`, container: '#content-container', position: 'beforeend' },
-                { path: `${basePath}section-playground.html`, container: '#content-container', position: 'beforeend' },
+            { path: `${basePath}section-accounts.html?v=5`, container: '#content-container', position: 'beforeend' },
+            { path: `${basePath}section-playground.html`, container: '#content-container', position: 'beforeend' },
             { path: `${basePath}section-usage-stats.html`, container: '#content-container', position: 'beforeend' },
             { path: `${basePath}section-logs.html`, container: '#content-container', position: 'beforeend' },
             { path: `${basePath}section-api-keys.html`, container: '#content-container', position: 'beforeend' },
             { path: `${basePath}section-gems.html`, container: '#content-container', position: 'beforeend' },
             { path: `${basePath}section-settings.html`, container: '#content-container', position: 'beforeend' },
         ];
-
-        await loadComponents(sectionComponents);
-
+        await loadComponents(components);
         console.log('All components loaded successfully');
-        // 触发组件加载完成事件
         window.dispatchEvent(new CustomEvent('componentsLoaded'));
-
-    } catch (error) {
-        console.error('Failed to initialize components:', error);
-        throw error;
-    }
+    })();
+    return initializationPromise;
 }
 
 /**
@@ -113,6 +161,8 @@ async function initializeComponents() {
  */
 function clearComponentCache() {
     componentCache.clear();
+    stylesheetCache.clear();
+    initializationPromise = null;
 }
 
 // 导出函数

@@ -313,18 +313,23 @@ curl -X POST http://localhost:5918/v1/images/generations \
 
 ## 지원 모델
 
-Gemini2API는 3개의 고정된 안정적인 모델 이름을 외부에 제공하며, 이들은 변경되지 않습니다. 이러한 모델 이름은 API 계약으로 작동하여 클라이언트가 장기간 사용할 수 있습니다.
+내장 Gemini 모델 카탈로그는 Sub2API의 Gemini API/CLI 플랫폼과 동기화됩니다.
 
 | 모델 ID | 설명 |
 |--------|------|
-| `gemini-pro` | Pro 모델, 최고 성능, 복잡한 작업에 적합 |
-| `gemini-flash` | 빠른 모델, 낮은 지연시간, 실시간 애플리케이션에 적합 |
-| `gemini-flash-thinking` | 사고 모델, 깊은 추론 및 분석 지원 |
+| `gemini-2.0-flash` | 기본 범용 및 계정 테스트 모델 |
+| `gemini-2.5-flash` | 빠른 범용 모델 |
+| `gemini-2.5-flash-image` | Gemini 2.5 이미지 생성 모델 |
+| `gemini-2.5-pro` | 고품질 Pro 모델 |
+| `gemini-3.5-flash` | Gemini 3.5 Flash 모델 |
+| `gemini-3-flash-preview` | Gemini 3 Flash Preview |
+| `gemini-3-pro-preview` | Gemini 3 Pro Preview |
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro Preview |
+| `gemini-3.1-flash-image` | Gemini 3.1 이미지 생성 모델 |
 
-**내부 자동 매핑**: 서비스는 Google 계정의 구독 수준(Advanced/Plus/Basic)에 따라 이러한 고정 이름을 현재 사용 가능한 실제 모델 버전으로 자동 매핑합니다. 계정 수준 변경, Google 롤아웃, 서비스 재시작 등 어떤 상황에서도 클라이언트는 항상 이 3개의 고정 이름을 사용할 수 있으며 수정이 필요하지 않습니다.
+Gemini 네이티브 모델 API는 Sub2API의 Code Assist 호환 경로와 같은 `gemini-3.1-pro-preview-customtools`도 인식합니다.
 
-**레거시 별칭 호환성**: 하위 호환성을 위해 다음 이전 모델 이름도 지원됩니다:
-- `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-2.0-flash-thinking` 등
+**계정 인식 라우팅**: OAuth API/CLI 계정에는 구체적인 모델 ID를 그대로 전달합니다. Cookie 계정은 현재 사용 가능한 Pro/Flash 웹 모델 패밀리로 매핑합니다. 기존 `gemini-pro`, `gemini-flash`, `gemini-flash-thinking` 이름도 계속 지원됩니다.
 
 ### 서드파티 모델
 

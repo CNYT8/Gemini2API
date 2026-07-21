@@ -99,25 +99,25 @@ curl http://localhost:5918/openai/v1/models \
   -H "Authorization: Bearer sk-你的API密钥"
 ```
 
-**响应**：
+**响应节选**：
 ```json
 {
   "object": "list",
   "data": [
     {
-      "id": "gemini-pro",
+      "id": "gemini-2.0-flash",
       "object": "model",
       "created": 1715970000,
       "owned_by": "gemini"
     },
     {
-      "id": "gemini-flash",
+      "id": "gemini-2.5-flash",
       "object": "model",
       "created": 1715970000,
       "owned_by": "gemini"
     },
     {
-      "id": "gemini-flash-thinking",
+      "id": "gemini-2.5-pro",
       "object": "model",
       "created": 1715970000,
       "owned_by": "gemini"
@@ -126,12 +126,7 @@ curl http://localhost:5918/openai/v1/models \
 }
 ```
 
-> 💡 **模型选择建议**：三个模型对应不同的速度/质量权衡。
-> - `gemini-flash`：最快（响应约 4-5 秒），适合 **agent / 高频 / 高并发**场景，推荐作为默认选择。
-> - `gemini-flash-thinking`：带思考过程，速度接近 flash，适合需要推理的任务。
-> - `gemini-pro`：质量最高但较慢（响应约 9-17 秒，长上下文更慢），适合对质量要求高、不在意延迟的场景。
->
-> agent 类客户端（会并发发起大量请求）建议优先用 `gemini-flash`。本服务的流式接口为真正的增量流式，首字一生成即开始推送。
+完整列表与 Sub2API 的 Gemini API/CLI 模型目录一致。通用场景默认使用 `gemini-2.0-flash`，更高质量使用 `gemini-2.5-pro`，生图使用 `*-image` 模型。旧 `gemini-pro`、`gemini-flash`、`gemini-flash-thinking` 别名继续兼容。
 
 ### POST /openai/v1/chat/completions
 

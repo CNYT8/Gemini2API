@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field
 from typing import Any
 import time as _time
 
+from app.core.gemini_models import DEFAULT_IMAGE_MODEL
+
 
 class ChatMessage(BaseModel):
     role: str
@@ -95,7 +97,7 @@ class ModelList(BaseModel):
 
 class ImageGenerationRequest(BaseModel):
     prompt: str
-    model: str | None = "gemini-pro"
+    model: str | None = DEFAULT_IMAGE_MODEL
     n: int = 1
     size: str | None = None          # Gemini 固定尺寸，忽略；保留兼容
     response_format: str = "b64_json"  # b64_json（默认，因 lh3 URL 客户端 403）| url

@@ -59,26 +59,26 @@ curl http://localhost:5918/openai/v1/models \
   -H "Authorization: Bearer sk-あなたのキー"
 ```
 
-**レスポンス:**
+**レスポンス例（抜粋）:**
 
 ```json
 {
   "object": "list",
   "data": [
     {
-      "id": "gemini-pro",
+      "id": "gemini-2.0-flash",
       "object": "model",
       "created": 1715970000,
       "owned_by": "gemini"
     },
     {
-      "id": "gemini-flash",
+      "id": "gemini-2.5-flash",
       "object": "model",
       "created": 1715970000,
       "owned_by": "gemini"
     },
     {
-      "id": "gemini-flash-thinking",
+      "id": "gemini-2.5-pro",
       "object": "model",
       "created": 1715970000,
       "owned_by": "gemini"
@@ -87,12 +87,7 @@ curl http://localhost:5918/openai/v1/models \
 }
 ```
 
-> 💡 **モデル選択ガイド**：3つのモデルは異なる速度/品質のトレードオフを提供します。
-> - `gemini-flash`：最速(応答約4-5秒)、**agent / 高頻度 / 高並行**シナリオに最適、デフォルト推奨。
-> - `gemini-flash-thinking`：思考プロセス付き、速度はflashに近く、推論が必要なタスクに適しています。
-> - `gemini-pro`：最高品質だが遅い(応答約9-17秒、長いコンテキストではさらに遅い)、品質重視でレイテンシを気にしないシナリオに適しています。
->
-> agentクライアント(多数の並行リクエストを発行)は `gemini-flash` を優先すべきです。本サービスのストリーミングインターフェースは真の増分ストリーミングで、最初の文字が生成されるとすぐにプッシュを開始します。
+完全な一覧は Sub2API の Gemini API/CLI モデルカタログと一致します。一般用途のデフォルトは `gemini-2.0-flash`、高品質用途は `gemini-2.5-pro`、画像生成は `*-image` モデルを使用します。旧 `gemini-pro`、`gemini-flash`、`gemini-flash-thinking` エイリアスも引き続き利用できます。
 
 ### POST /openai/v1/chat/completions
 

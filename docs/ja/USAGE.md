@@ -337,18 +337,23 @@ curl -X POST http://localhost:5918/v1/images/generations \
 
 ## 対応モデル
 
-Gemini2API は 3 つの固定された安定したモデル名を対外的に提供しており、これらは変更されません。これらのモデル名は API コントラクトとして機能し、クライアントは長期間使用できます。
+組み込みの Gemini モデルカタログは、Sub2API の Gemini API/CLI プラットフォームと同期しています。
 
 | モデル名 | 説明 |
 |---------|------|
-| `gemini-pro` | Pro モデル、最高性能、複雑なタスクに適している |
-| `gemini-flash` | 高速モデル、低遅延、リアルタイムアプリケーションに適している |
-| `gemini-flash-thinking` | 思考モデル、深い推論と分析をサポート |
+| `gemini-2.0-flash` | デフォルトの汎用・アカウントテストモデル |
+| `gemini-2.5-flash` | 高速な汎用モデル |
+| `gemini-2.5-flash-image` | Gemini 2.5 画像生成モデル |
+| `gemini-2.5-pro` | 高品質な Pro モデル |
+| `gemini-3.5-flash` | Gemini 3.5 Flash モデル |
+| `gemini-3-flash-preview` | Gemini 3 Flash Preview |
+| `gemini-3-pro-preview` | Gemini 3 Pro Preview |
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro Preview |
+| `gemini-3.1-flash-image` | Gemini 3.1 画像生成モデル |
 
-**内部自動マッピング**：サービスは Google アカウントのサブスクリプションレベル（Advanced/Plus/Basic）に基づいて、これらの固定名を現在利用可能な実際のモデルバージョンに自動的にマップします。アカウントレベルの変更、Google のロールアウト、サービスの再起動など、どのような状況でも、クライアントは常にこれら 3 つの固定名を使用でき、変更は不要です。
+Gemini ネイティブモデル API は、Sub2API の Code Assist 互換ルートと同じ `gemini-3.1-pro-preview-customtools` も認識します。
 
-**レガシーエイリアスの互換性**：後方互換性のため、以下の古いモデル名もサポートされています：
-- `gemini-2.5-pro`、`gemini-2.0-flash`、`gemini-2.0-flash-thinking` など
+**アカウント対応ルーティング**：OAuth API/CLI アカウントには具体的なモデル ID をそのまま渡します。Cookie アカウントでは、現在利用可能な Pro/Flash Web モデルファミリーへマッピングします。旧 `gemini-pro`、`gemini-flash`、`gemini-flash-thinking` 名も引き続き利用できます。
 
 ### サードパーティモデル
 
